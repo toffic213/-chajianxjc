@@ -38,6 +38,7 @@
   let lastSignature = '';
   let pendingSignature = '';
   let pendingSince = 0;
+  let suppressFabClickUntil = 0;
   let drag = null;
 
   function makeId() { return 'stg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8); }
@@ -96,8 +97,9 @@
 
   function init() {
     if (ready) return;
-    ready = true;
+    if (!document.body) return;
     mount();
+    ready = true;
     bind();
     restoreWindows();
     subscribe();
@@ -106,6 +108,7 @@
 
   function mount() {
     if (document.getElementById(ROOT_ID)) return;
+    injectCriticalStyle();
     const root = document.createElement('div');
     root.id = ROOT_ID;
     root.innerHTML = [
@@ -117,6 +120,14 @@
     document.body.appendChild(root);
     placeFab();
     renderAll();
+  }
+
+  function injectCriticalStyle() {
+    if (document.getElementById('stg-critical-style')) return;
+    const style = document.createElement('style');
+    style.id = 'stg-critical-style';
+    style.textContent = '#stg-root{position:relative;z-index:2147483000}#stg-root .stg-fab{position:fixed!important;right:22px;bottom:92px;width:52px;height:52px;border-radius:50%;border:1px solid rgba(27,42,58,.22);background:#f7fbff;color:#17212b;box-shadow:0 12px 26px rgba(16,27,39,.22);display:grid;place-items:center;z-index:2147483001!important;touch-action:none;cursor:pointer}#stg-root .stg-fab svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}#stg-root .stg-panel{position:fixed;right:22px;bottom:150px;width:min(440px,calc(100vw - 24px));max-height:min(720px,calc(100vh - 32px));background:#f8fafc;color:#1d252f;border:1px solid rgba(30,41,59,.18);border-radius:8px;box-shadow:0 20px 60px rgba(15,23,42,.3);overflow:hidden;z-index:2147483000;display:none}#stg-root .stg-panel.stg-open{display:flex;flex-direction:column}';
+    (document.head || document.documentElement).appendChild(style);
   }
 
   function tab(id, svg, active, title) { return '<button class="stg-tab ' + (active ? 'stg-active' : '') + '" data-stg-tab="' + id + '" title="' + title + '">' + svg + '</button>'; }
@@ -149,7 +160,10 @@
     const clicked = !drag.moved;
     drag = null;
     saveSettings();
-    if (clicked) togglePanel();
+    if (clicked) {
+      suppressFabClickUntil = Date.now() + 350;
+      togglePanel();
+    }
   }
   function placeFab() {
     const fab = document.querySelector('#' + ROOT_ID + ' .stg-fab');
@@ -274,7 +288,10 @@
   }
 
   function action(name, el) {
-    if (name === 'toggle') return;
+    if (name === 'toggle') {
+      if (Date.now() < suppressFabClickUntil) return;
+      return togglePanel();
+    }
     if (name === 'close') return togglePanel(false);
     if (name === 'addProfile') { const p = { id: makeId(), name: '新档案', baseUrl: '', apiKey: '', model: '', temperature: 0.9, maxTokens: 800, stream: false }; settings.profiles.push(p); settings.activeProfileId = p.id; saveSettings(); renderAll(); }
     if (name === 'delProfile') { if (settings.profiles.length <= 1) return status('至少保留一个 API 档案。'); settings.profiles = settings.profiles.filter(p => p.id !== settings.activeProfileId); settings.activeProfileId = settings.profiles[0].id; saveSettings(); renderAll(); }
