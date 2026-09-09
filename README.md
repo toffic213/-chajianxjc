@@ -1,177 +1,189 @@
-# Stage Theater 🎭
+# 🎭 Stage Theater (小剧场) - SillyTavern 插件
 
-Auto-generate mini theater scenes (小剧场) after AI replies using an independent API. This SillyTavern extension provides a complete setup for generating contextual dramatic scenarios based on chat messages.
+为酒馆(SillyTavern)打造的小剧场自动生成插件。在AI回复完毕后，自动或手动使用独立API生成符合场景的小剧场脚本。
 
-## Features
+## ✨ 主要功能
 
-✨ **Core Functions**
-- 🎬 Automatically trigger mini-scene generation after each AI reply
-- 🔌 Independent OpenAI-compatible API (not reliant on SillyTavern's model)
-- 📚 Prompt library with unlimited templates
-- 💾 Persistent prompt & API settings
-- 🎯 Automatic scene results stored in chat history
+### 核心特性
+- **自动生成**：AI 回复完成后自动生成小剧场（可选）
+- **独立API**：使用独立的 API 接口，不依赖酒馆配置
+- **OpenAI 兼容**：支持任何 OpenAI 兼容的 API 服务
+- **提示词库**：自定义提示词库，支持分类、排序、导入导出
+- **上下文感知**：可配置发送的聊天历史深度和世界书
+- **多配置档案**：支持多个 API 配置，一键切换
+- **消息级持久化**：生成的小剧场保存到聊天记录
+- **HTML/JS 渲染**：生成结果支持基础的 HTML 和 JavaScript 渲染
 
-**Scene Generation**
-- Multiple prompt merging (combine several prompts into one generation)
-- Customizable context depth (0-20 recent messages)
-- Optional world book inclusion
-- Character card data support
-- HTML/Markdown rendering in results
+### 交互特性
+- 🎯 **悬浮球入口**：全屏固定悬浮球，包含所有功能
+- 📋 **消息附属**：小剧场显示在对应 AI 消息下方
+- 🔄 **重新生成**：一键重新生成，替换旧内容
+- ✏️ **编辑功能**：直接编辑生成的小剧场内容
+- 📋 **复制功能**：一键复制到剪贴板
+- 🗑️ **删除功能**：删除当前小剧场
+- 📊 **历史记录**：查看所有生成过的小剧场
 
-**User Interface**
-- 🎈 Floating ball as single control point
-- ⚙️ All settings accessible from floating panel
-- 📍 Scene results displayed below corresponding AI messages
-- 🎨 Clean, dark/light mode responsive design
-- 📋 Recent generation records
+## 🚀 快速开始
 
-**Result Window Features**
-- 🔄 Regenerate with same context
-- 📋 Copy to clipboard
-- ❤️ Favorite scenes for later viewing
-- 📁 Collapse/expand content
-- 🗑️ Delete individual scenes
-- ✏️ Edit inline (WIP)
+### 1. 安装
+将整个 `stage-theater` 文件夹复制到酒馆的 `data/[user]/extensions/` 目录中。
 
-## Installation
+### 2. 启用
+在酒馆设置 → 扩展 中找到 "Stage Theater (小剧场)" 并启用。
 
-1. Copy the `stage-theater` folder into your SillyTavern extensions directory:
-   ```
-   data/[username]/extensions/stage-theater/
-   ```
+### 3. 配置 API
+1. 打开悬浮球（右下角）
+2. 切换到 "API配置" 选项卡
+3. 点击 "+ 新增配置"
+4. 填入你的 API 信息：
+   - **配置名称**：自定义名称（如 "GPT-4"）
+   - **API 地址**：如 `https://api.openai.com/v1`
+   - **API Key**：你的密钥
+   - **模型名称**：如 `gpt-4` / `gpt-4-turbo`
+   - **温度**：0-2，推荐 0.9
+   - **最大输出长度**：推荐 800
 
-2. Restart SillyTavern and go to **Settings → Extensions**
+### 4. 添加提示词
+1. 切换到 "提示词库" 选项卡
+2. 点击 "+ 新增提示词"
+3. 填入提示词内容（如：描述小剧场场景、角色表情等）
+4. 保存即可
 
-3. Enable "Stage Theater" in the extensions list
+### 5. 调整设置
+在 "设置" 选项卡中配置：
+- ✅ **全局启用**：启用或禁用插件
+- ✅ **当前聊天启用**：为某个聊天单独关闭
+- ✅ **自动生成**：AI 回复后自动生成（默认关闭以节省 API）
+- ✅ **发送世界书**：将启用的世界书条目发送给 AI
+- ✅ **发送角色卡**：将角色设定发送给 AI
+- ✅ **上下文深度**：发送最近多少条消息（0 = 仅当前回复）
 
-## Configuration
+## 📖 使用方法
 
-### API Setup
-1. Click the floating ball (bottom-right)
-2. Fill in your OpenAI-compatible API:
-   - **API Address**: e.g., `https://api.openai.com` or `http://localhost:8000`
-   - **API Key**: Your authentication token
-   - **Model**: e.g., `gpt-4`, `gpt-3.5-turbo`
-   - Click "Get Model List" to fetch available models
+### 手动生成
+1. 在聊天中让 AI 回复
+2. 打开悬浮球 → 设置 → 点击 "🎬 手动生成当前消息"
+3. 等待 API 返回结果
 
-### Prompt Library
-1. Click **"+ Add Prompt"** to create a new template
-2. Enter a name and content
-3. Check the checkbox to enable
-4. Or **Import JSON** with format:
-   ```json
-   [
-     {"name": "Romantic Scene", "content": "Write a romantic mini-scene..."},
-     {"name": "Comedy", "content": "Write a funny mini-scene..."}
-   ]
-   ```
+### 自动生成
+1. 在设置中启用 "自动生成"
+2. AI 每次回复完成后会自动调用 API 生成小剧场
 
-### Generation Settings
-- **Enable Auto-Generate**: Toggle to turn on/off auto-triggering
-- **Temperature**: 0-1, controls randomness (default 0.9)
-- **Max Length**: Output tokens (default 800)
-- **Context Depth**: How many recent messages to include (0-20, default 10)
-- **Send World Book**: Include active world book entries (optional)
+### 编辑与管理
+- **重新生成**：点击小剧场窗口的 "🔄 重新生成" 按钮
+- **编辑**：点击 "✏️ 编辑" 修改内容
+- **复制**：点击 "📋 复制" 复制到剪贴板
+- **删除**：点击 "🗑️ 删除" 移除此条小剧场
+- **查看历史**：在 "历史记录" 选项卡查看所有记录
 
-## How It Works
+## ⚙️ 高级配置
 
-1. **Trigger**: After AI completes a full reply, Stage Theater automatically:
-   - Fetches the latest AI message
-   - Gathers selected prompts from library
-   - Collects context (recent messages, world book, character data)
+### 提示词示例
 
-2. **Generation**: Sends merged prompt + context to your independent API
-
-3. **Display**: Results appear in a panel directly below the AI message
-   - Supports full HTML/Markdown rendering
-   - User can regenerate, edit, copy, favorite, or delete
-
-4. **Persistence**: 
-   - Scene results saved to chat metadata
-   - Settings saved to localStorage + SillyTavern extension_settings
-   - Survives restart
-
-## API Payload Example
-
-```json
-{
-  "model": "gpt-4",
-  "temperature": 0.9,
-  "max_tokens": 800,
-  "messages": [
-    {
-      "role": "system",
-      "content": "You are a creative writer. Generate a mini theatrical scene..."
-    },
-    {
-      "role": "user",
-      "content": "[AI's reply text]"
-    }
-  ]
-}
+#### 示例 1：场景描写
+```
+基于以下对话，创建一个小剧场场景，描写人物表情、动作和环境细节。
+使用 HTML 格式化输出，包含 <div>、<p>、<br> 等标签。
 ```
 
-## Troubleshooting
+#### 示例 2：情感反应
+```
+为对话中的每个角色生成一个小剧场，展现他们的内心感受和细微反应。
+使用 HTML 格式输出，支持 <strong>、<em> 等格式标签。
+```
 
-**Scenes not generating?**
-- Ensure auto-generate is enabled
-- Check API configuration (address, key, model)
-- Verify at least one prompt is enabled
-- Check browser console for errors
+#### 示例 3：多场景生成
+```
+根据对话内容生成2个小剧场场景：
+1. 主角的反应
+2. 配角的心理活动
 
-**API connection fails?**
-- Try with/without `/v1` in API address
-- Verify API key is correct
-- Test with a simpler prompt first
+使用 HTML 分别格式化两个场景，用 <div class="scene"> 包裹每个场景。
+```
 
-**Settings not saving?**
-- Check if localStorage is enabled
-- Verify you have proper permissions
-- Try exporting settings as backup
+### 上下文深度
 
-## API Compatibility
+- **0**：仅发送当前 AI 回复（最快，最便宜）
+- **5-10**：发送最近 5-10 条消息（推荐）
+- **20+**：发送更多历史（更贵但更准确）
 
-Works with any OpenAI-compatible endpoint:
-- OpenAI (GPT-4, GPT-3.5)
-- Azure OpenAI
-- Ollama
-- LM Studio
-- LocalAI
-- Vllm
-- Any other /chat/completions compatible API
+### 世界书整合
+- 启用 "发送世界书" 后，所有已启用的世界书条目都会发送给 AI
+- AI 可以根据世界设定生成更符合背景的小剧场
 
-## Data Storage
+## 🔒 数据持久化
 
-- **Settings**: `localStorage[stage-theater_settings]` + `window.extension_settings.stage-theater`
-- **Scenes**: `chat.metadata.extensions.stage-theater.messages.*`
-- Auto-syncs with SillyTavern on changes
+- **本地设置**：API 配置、提示词库保存在 `localStorage`
+- **聊天记录**：生成的小剧场保存在聊天消息的 metadata 中
+- **自动备份**：关闭酒馆重开后所有数据保持不变
 
-## Keyboard Shortcuts
+## 🛠️ 故障排除
 
-- Floating ball click: Toggle settings panel
-- Scene window buttons: Self-explanatory SVG icons
+### API 调用失败
+1. 检查 API 地址是否正确（通常末尾不需要斜杠）
+2. 确认 API Key 有效
+3. 确保模型名称正确
+4. 检查网络连接
 
-## Performance Notes
+### 小剧场未显示
+1. 确认插件已启用
+2. 检查当前聊天是否禁用了插件
+3. 尝试手动生成而不是自动生成
+4. 查看浏览器控制台（F12）的错误日志
 
-- First request may take a moment (API latency)
-- Scenes only generate on complete AI replies
-- No background polling or constant API calls
-- Lightweight DOM insertion, minimal performance impact
+### 提示词不生效
+1. 确保提示词已启用（绿色✓状态）
+2. 检查提示词内容是否为空
+3. 尝试编辑提示词，重新保存
+4. 在 API 配置中调整温度参数
 
-## Disclaimer
+## 📝 提示词库导入导出
 
-This extension requires an external API (OpenAI, Ollama, etc.). API costs/usage are your responsibility.
+### 导出
+1. 在 "提示词库" 选项卡点击 "📤 导出"
+2. 自动下载 JSON 文件（可备份或分享）
 
-## License
+### 导入
+1. 点击 "📥 导入"
+2. 选择 JSON 文件
+3. 确认导入
 
-MIT
+## 🎯 最佳实践
 
-## Version
+1. **API 密钥安全**：
+   - 不要在代码或文档中暴露 API Key
+   - 定期轮换密钥
+   - 使用 API Key 的访问控制功能限制权限
 
-**1.0.0**
+2. **成本控制**：
+   - 对较长对话使用较低的上下文深度
+   - 仅在需要时启用自动生成
+   - 选择成本效益合理的模型
+
+3. **提示词优化**：
+   - 编写清晰、具体的提示词
+   - 在提示词中包含格式要求
+   - 使用示例帮助 AI 理解预期输出
+
+4. **性能优化**：
+   - 对于大型聊天，使用较小的上下文深度
+   - 关闭不需要的设置（如世界书）
+   - 避免在低网速条件下启用自动生成
+
+## 📧 反馈与改进
+
+如遇问题或有建议，请：
+1. 查看浏览器控制台日志（F12 → Console）
+2. 检查 API 返回的错误信息
+3. 尝试调整参数重新测试
+
+## 📄 许可证
+
+MIT License - 自由使用、修改和分发
 
 ---
 
-**Author**: toffic213  
-**Last Updated**: 2026-09  
-**Compatible with**: SillyTavern (Tauri build)
+**版本**：1.0.0  
+**最后更新**：2026-09-09
+
+🎭 **享受小剧场的魔力吧！**
