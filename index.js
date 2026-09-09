@@ -3,615 +3,135 @@
 
   const PLUGIN_ID = 'stage-theater';
   const ROOT_ID = 'stg-root';
-  const STORAGE_KEY = 'stage_theater_settings_v1';
-  const VERSION = '1.0.3';
-  const icon = {
-    masks: '<svg viewBox="0 0 24 24"><path d="M4 8c2-2 5-2 8 0 3-2 6-2 8 0v4c0 4-3 7-8 8-5-1-8-4-8-8V8z"/><path d="M8 12h.01M16 12h.01M9 16c2 1 4 1 6 0"/></svg>',
-    close: '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
-    cog: '<svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .59V20a2 2 0 1 1-4 0v-.01a1.7 1.7 0 0 0-1-.59 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.59-1H4a2 2 0 1 1 0-4h.01a1.7 1.7 0 0 0 .59-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.59V4a2 2 0 1 1 4 0v.01a1.7 1.7 0 0 0 1 .59 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.23.35.44.67.59 1H20a2 2 0 1 1 0 4h-.01a1.7 1.7 0 0 0-.59 1z"/></svg>',
-    api: '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.07 0l2.12-2.12a5 5 0 0 0-7.07-7.07L11 4.93"/><path d="M14 11a5 5 0 0 0-7.07 0L4.81 13.12a5 5 0 0 0 7.07 7.07L13 19.07"/></svg>',
-    file: '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
-    hist: '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg>',
-    play: '<svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5z"/></svg>',
-    refresh: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 16v5h5"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 8V3h-5"/></svg>',
-    copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-    edit: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>',
-    trash: '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>',
-    star: '<svg viewBox="0 0 24 24"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z"/></svg>',
-    down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
-    up: '<svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg>',
-    save: '<svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>'
-  };
-
-  const defaults = {
-    globalEnabled: true, autoGenerate: false, chatEnabledDefault: true,
-    contextDepth: 10, contextPreset: '10', sendWorldInfo: false,
-    sendCharacterCard: true, includeLastUser: true, promptMode: 'merged',
-    renderScripts: false, activeProfileId: 'default', fab: { right: 22, bottom: 92 },
-    profiles: [{ id: 'default', name: '默认档案', baseUrl: '', apiKey: '', model: '', temperature: 0.9, maxTokens: 800, stream: false }],
-    prompts: [{ id: makeId(), name: '默认小剧场', category: '通用', note: '可改成你自己的风格要求。', enabled: true, text: '请根据刚刚的角色回复，生成一个短小剧场。要求：贴合角色卡设定、贴合当前对话气氛；可以使用 HTML 做分区和基础排版；不要复述原文；输出只包含小剧场正文。' }]
-  };
-
-  let settings = loadSettings();
-  let ready = false;
-  let busy = false;
-  let lastSignature = '';
-  let pendingSignature = '';
-  let pendingSince = 0;
-  let suppressFabClickUntil = 0;
-  let drag = null;
-
-  emergencyFab();
-
-  function emergencyFab() {
-    function mountEmergency() {
-      if (!document.body || document.getElementById(ROOT_ID) || document.getElementById('stg-emergency-fab')) return;
-      const fab = document.createElement('button');
-      fab.id = 'stg-emergency-fab';
-      fab.type = 'button';
-      fab.title = '小剧场生成器';
-      fab.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2-2 5-2 8 0 3-2 6-2 8 0v4c0 4-3 7-8 8-5-1-8-4-8-8V8z"/><path d="M8 12h.01M16 12h.01M9 16c2 1 4 1 6 0"/></svg>';
-      fab.style.cssText = 'position:fixed!important;right:22px!important;bottom:92px!important;width:56px!important;height:56px!important;border:2px solid #ffffff!important;border-radius:50%!important;background:#126e82!important;color:#ffffff!important;box-shadow:0 12px 26px rgba(16,27,39,.38)!important;display:grid!important;place-items:center!important;z-index:2147483647!important;cursor:pointer!important;touch-action:none!important';
-      document.body.appendChild(fab);
-      fab.addEventListener('click', function () {
-        const root = document.getElementById(ROOT_ID);
-        if (root) {
-          const panel = root.querySelector('[data-stg-panel]');
-          if (panel) panel.classList.toggle('stg-open');
-        } else {
-          console.warn('[stage-theater] emergency fab is visible, normal mount has not completed');
-        }
-      });
-    }
-    if (document.body) mountEmergency();
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountEmergency);
-    window.addEventListener('load', mountEmergency);
-    const timer = setInterval(function () {
-      if (document.getElementById(ROOT_ID)) {
-        const emergency = document.getElementById('stg-emergency-fab');
-        if (emergency && emergency.parentNode) emergency.parentNode.removeChild(emergency);
-        clearInterval(timer);
-        return;
-      }
-      mountEmergency();
-    }, 250);
-    setTimeout(function () { clearInterval(timer); }, 15000);
+  const STYLE_ID = 'stg-critical-style';
+  const SETTINGS_KEY = 'stage-theater-settings-v2';
+  const VERSION = '2.0.0';
+  const icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2-2 5-2 8 0 3-2 6-2 8 0v4c0 4-3 7-8 8-5-1-8-4-8-8V8z"/><path d="M8 12h.01M16 12h.01M9 16c2 1 4 1 6 0"/></svg>';
+  function iconFor(name) {
+    const paths = { close: '<path d="M6 6l12 12M18 6L6 18"/>', collapse: '<path d="M5 9l7 7 7-7"/>', refresh: '<path d="M20 11a8 8 0 0 0-14.7-4L3 10m0 0V4m0 6h6M4 13a8 8 0 0 0 14.7 4L21 14m0 0v6m0-6h-6"/>', star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3z"/>', copy: '<rect x="8" y="8" width="11" height="11" rx="1"/><path d="M16 8V5H5a1 1 0 0 0-1 1v11h4"/>', edit: '<path d="m4 16-.7 4 4-.7L19 7.6a2.1 2.1 0 0 0-3-3L4 16zM14.5 6.5l3 3"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/>', up: '<path d="m6 14 6-6 6 6"/>', down: '<path d="m6 10 6 6 6-6"/>' };
+    return '<svg viewBox="0 0 24 24" aria-hidden="true">' + (paths[name] || '') + '</svg>';
   }
 
   function makeId() { return 'stg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8); }
-  function ctx() { try { return window.SillyTavern?.getContext?.() || {}; } catch (_) { return {}; } }
-  function extSettings() { const c = ctx(); return c.extensionSettings || window.extension_settings || null; }
-  function clone(v) { try { return JSON.parse(JSON.stringify(v)); } catch (_) { return v; } }
-  function html(v) { return String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
-  function attr(v) { return html(v).replace(/`/g, '&#96;'); }
-  function css(v) { return window.CSS?.escape ? window.CSS.escape(String(v)) : String(v).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
-  function hash(s) { let h = 0; s = String(s || ''); for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0; return String(h >>> 0); }
-  function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+  function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+  function clone(value) { try { return JSON.parse(JSON.stringify(value)); } catch (_) { return value; } }
+  function context() { try { return window.SillyTavern && typeof window.SillyTavern.getContext === 'function' ? (window.SillyTavern.getContext() || {}) : {}; } catch (_) { return {}; } }
+  function messages() { const c = context(); return Array.isArray(c.chat) ? c.chat : []; }
+  function bodyOf(message) { return String(message && (message.mes != null ? message.mes : message.content != null ? message.content : '') || ''); }
+  function isUser(message) { return !!(message && (message.is_user || message.role === 'user')); }
+  function isSystem(message) { return !!(message && (message.is_system || message.role === 'system')); }
+  function isAssistant(message) { return !!message && !isUser(message) && !isSystem(message); }
+  function messageKey(index, message) { return String(message && (message.id != null ? message.id : message.send_date != null ? message.send_date : message.gen_id != null ? message.gen_id : index)); }
+  function hash(value) { let result = 0; const source = String(value || ''); for (let i = 0; i < source.length; i++) result = ((result << 5) - result + source.charCodeAt(i)) | 0; return String(result >>> 0); }
+
+  const defaults = { enabled: true, autoGenerate: false, chatDefaultEnabled: true, contextDepth: 10, sendWorldbook: false, sendCharacterCard: true, sendPreviousUser: true, promptMode: 'merged', allowScripts: false, activeProfile: 'default', fab: { right: 18, bottom: 86 }, profiles: [{ id: 'default', name: '默认 API', baseUrl: '', apiKey: '', model: '', temperature: 0.9, maxTokens: 800, stream: false }], prompts: [{ id: makeId(), name: '默认小剧场', category: '通用', note: '', enabled: true, text: '请根据角色卡设定、当前对话和触发的 AI 回复，生成一个贴合气氛的小剧场。可以使用基础 HTML 排版，只输出小剧场正文。' }] };
+  let settings = loadSettings();
+  let initialized = false;
+  let subscribed = false;
+  let generating = false;
+  let pendingSignature = '';
+  let pendingSince = 0;
+  let generatedSignature = '';
+  let drag = null;
+  let skipClickUntil = 0;
 
   function loadSettings() {
     let stored = null;
-    try { stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (_) {}
-    try { if (!stored) stored = extSettings()?.[PLUGIN_ID]; } catch (_) {}
-    const s = Object.assign(clone(defaults), stored || {});
-    s.profiles = Array.isArray(stored?.profiles) && stored.profiles.length ? stored.profiles : clone(defaults.profiles);
-    s.prompts = Array.isArray(stored?.prompts) && stored.prompts.length ? stored.prompts : clone(defaults.prompts);
-    s.fab = Object.assign({}, defaults.fab, stored?.fab || {});
-    return s;
+    try { stored = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || 'null'); } catch (_) {}
+    if (!stored) { try { const store = context().extensionSettings || window.extension_settings; stored = store && store[PLUGIN_ID]; } catch (_) {} }
+    const result = Object.assign(clone(defaults), stored || {});
+    result.fab = Object.assign({}, defaults.fab, stored && stored.fab || {});
+    result.profiles = Array.isArray(stored && stored.profiles) && stored.profiles.length ? stored.profiles : clone(defaults.profiles);
+    result.prompts = Array.isArray(stored && stored.prompts) && stored.prompts.length ? stored.prompts : clone(defaults.prompts);
+    return result;
   }
-
   function saveSettings() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (e) { console.warn('[stage-theater] local save failed', e); }
-    try {
-      const store = extSettings();
-      if (store) store[PLUGIN_ID] = clone(settings);
-      const c = ctx();
-      c.saveSettingsDebounced?.();
-      window.saveSettingsDebounced?.();
-      window.saveSettings?.();
-    } catch (e) { console.warn('[stage-theater] settings save failed', e); }
+    try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (_) {}
+    try { const c = context(), store = c.extensionSettings || window.extension_settings; if (store) store[PLUGIN_ID] = clone(settings); if (typeof c.saveSettingsDebounced === 'function') c.saveSettingsDebounced(); else if (typeof window.saveSettingsDebounced === 'function') window.saveSettingsDebounced(); } catch (_) {}
   }
+  function chatData() { const c = context(); c.chatMetadata = c.chatMetadata || {}; c.chatMetadata.extensions = c.chatMetadata.extensions || {}; c.chatMetadata.extensions[PLUGIN_ID] = c.chatMetadata.extensions[PLUGIN_ID] || { enabled: settings.chatDefaultEnabled, theaters: {} }; const data = c.chatMetadata.extensions[PLUGIN_ID]; data.theaters = data.theaters || {}; if (typeof data.enabled !== 'boolean') data.enabled = settings.chatDefaultEnabled; return data; }
+  function saveChat() { const c = context(); try { if (typeof c.saveChat === 'function') c.saveChat(); } catch (_) {} try { if (typeof window.saveChatConditional === 'function') window.saveChatConditional(); } catch (_) {} try { if (typeof window.saveChat === 'function') window.saveChat(); } catch (_) {} }
 
-  function chatStore() {
-    const c = ctx();
-    c.chatMetadata ||= {};
-    c.chatMetadata.extensions ||= {};
-    c.chatMetadata.extensions[PLUGIN_ID] ||= { chatEnabled: settings.chatEnabledDefault, theaters: {} };
-    const s = c.chatMetadata.extensions[PLUGIN_ID];
-    s.theaters ||= {};
-    if (typeof s.chatEnabled !== 'boolean') s.chatEnabled = settings.chatEnabledDefault;
-    return s;
-  }
+  function injectCriticalStyle() { if (document.getElementById(STYLE_ID)) return; const style = document.createElement('style'); style.id = STYLE_ID; style.textContent = '#stg-root{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483000!important;pointer-events:none!important}#stg-root .stg-fab,#stg-root .stg-panel{pointer-events:auto!important}#stg-root .stg-fab{position:fixed!important;right:18px;bottom:86px;width:58px;height:58px;border:2px solid #fff;border-radius:50%;background:#126e82;color:#fff;box-shadow:0 12px 30px rgba(0,0,0,.45);display:grid!important;place-items:center;z-index:2147483646!important;cursor:pointer;touch-action:none;opacity:1!important;visibility:visible!important}#stg-root .stg-fab svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}#stg-root .stg-panel{position:fixed;right:18px;bottom:154px;width:min(450px,calc(100vw - 20px));max-height:calc(100vh - 24px);background:#f8fafc;color:#17212b;border:1px solid #94a3b8;border-radius:8px;box-shadow:0 18px 60px rgba(0,0,0,.38);overflow:hidden;z-index:2147483645;display:none}#stg-root .stg-panel.stg-open{display:flex;flex-direction:column}'; (document.head || document.documentElement).appendChild(style); }
+  function mount() { if (!document.body) return false; if (document.getElementById(ROOT_ID)) return true; injectCriticalStyle(); const root = document.createElement('div'); root.id = ROOT_ID; root.setAttribute('data-stage-theater', VERSION); root.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483000;pointer-events:none;'; root.innerHTML = '<button class="stg-fab" data-stg-action="toggle" type="button" title="小剧场设置">' + icon + '</button><section class="stg-panel" data-stg-panel><header class="stg-panel-head"><strong>小剧场生成器</strong><button class="stg-icon-btn" data-stg-action="close" type="button" title="关闭">' + iconFor('close') + '</button></header><nav class="stg-tabs"><button class="stg-tab stg-active" data-stg-tab="general" type="button">总控</button><button class="stg-tab" data-stg-tab="api" type="button">API</button><button class="stg-tab" data-stg-tab="prompts" type="button">提示词</button><button class="stg-tab" data-stg-tab="history" type="button">历史</button><button class="stg-tab" data-stg-tab="manual" type="button">手动</button></nav><main class="stg-body"><section data-stg-section="general" class="stg-section stg-active"></section><section data-stg-section="api" class="stg-section"></section><section data-stg-section="prompts" class="stg-section"></section><section data-stg-section="history" class="stg-section"></section><section data-stg-section="manual" class="stg-section"></section><div class="stg-status" data-stg-status></div></main></section>'; document.body.appendChild(root); placeFab(); bindFab(); renderAll(); return true; }
+  function bindFab() { const fab = document.querySelector('#' + ROOT_ID + ' .stg-fab'); if (!fab || fab.dataset.stgBound) return; fab.dataset.stgBound = '1'; fab.addEventListener('pointerdown', pointerDown, { passive: true }); fab.addEventListener('pointermove', pointerMove, { passive: true }); fab.addEventListener('pointerup', pointerUp, { passive: true }); fab.addEventListener('pointercancel', pointerUp, { passive: true }); }
+  function pointerDown(event) { drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, right: Number(settings.fab.right), bottom: Number(settings.fab.bottom), moved: false }; try { event.currentTarget.setPointerCapture(event.pointerId); } catch (_) {} }
+  function pointerMove(event) { if (!drag || drag.pointerId !== event.pointerId) return; const dx = event.clientX - drag.x, dy = event.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 6) drag.moved = true; const fab = event.currentTarget; settings.fab.right = Math.max(8, Math.min(Math.max(8, innerWidth - fab.offsetWidth - 8), drag.right - dx)); settings.fab.bottom = Math.max(8, Math.min(Math.max(8, innerHeight - fab.offsetHeight - 8), drag.bottom - dy)); placeFab(); }
+  function pointerUp(event) { if (!drag || drag.pointerId !== event.pointerId) return; const clicked = !drag.moved; drag = null; saveSettings(); if (clicked) { skipClickUntil = Date.now() + 400; togglePanel(); } }
+  function placeFab() { const fab = document.querySelector('#' + ROOT_ID + ' .stg-fab'), panel = document.querySelector('#' + ROOT_ID + ' [data-stg-panel]'); if (fab) { fab.style.right = Math.max(8, Number(settings.fab.right) || 18) + 'px'; fab.style.bottom = Math.max(8, Number(settings.fab.bottom) || 86) + 'px'; } if (panel) { panel.style.right = Math.max(10, Number(settings.fab.right) || 18) + 'px'; panel.style.bottom = Math.max(70, (Number(settings.fab.bottom) || 86) + 66) + 'px'; } }
+  function bindEvents() { if (document.documentElement.dataset.stgEventsBound) return; document.documentElement.dataset.stgEventsBound = '1'; document.addEventListener('click', onClick, true); document.addEventListener('change', onChange, true); document.addEventListener('input', onInput, true); }
+  function onClick(event) { const tab = event.target && event.target.closest ? event.target.closest('[data-stg-tab]') : null, actionEl = event.target && event.target.closest ? event.target.closest('[data-stg-action]') : null, theater = event.target && event.target.closest ? event.target.closest('[data-stg-theater-action]') : null, root = document.getElementById(ROOT_ID); if (tab && root && root.contains(tab)) { event.preventDefault(); event.stopPropagation(); setTab(tab.dataset.stgTab); return; } if (actionEl && root && root.contains(actionEl)) { event.preventDefault(); event.stopPropagation(); if (actionEl.dataset.stgAction === 'toggle' && Date.now() < skipClickUntil) return; action(actionEl.dataset.stgAction, actionEl); return; } if (theater) { event.preventDefault(); event.stopPropagation(); theaterAction(theater.dataset.stgTheaterAction, theater); } }
+  function onChange(event) { const el = event.target; if (!el) return; if (el.dataset.stgImport) return importPrompts(el); if (el.matches('[data-stg-setting],[data-stg-profile],[data-stg-prompt]')) updateField(el); }
+  function onInput(event) { const el = event.target; if (el && el.matches && el.matches('[data-stg-setting],[data-stg-profile],[data-stg-prompt]') && el.type !== 'checkbox' && el.tagName !== 'SELECT') updateField(el); }
+  function togglePanel(force) { const panel = document.querySelector('#' + ROOT_ID + ' [data-stg-panel]'); if (!panel) return; panel.classList.toggle('stg-open', typeof force === 'boolean' ? force : !panel.classList.contains('stg-open')); if (panel.classList.contains('stg-open')) renderAll(); }
+  function setTab(name) { document.querySelectorAll('#' + ROOT_ID + ' [data-stg-tab]').forEach(function (el) { el.classList.toggle('stg-active', el.dataset.stgTab === name); }); document.querySelectorAll('#' + ROOT_ID + ' [data-stg-section]').forEach(function (el) { el.classList.toggle('stg-active', el.dataset.stgSection === name); }); render(name); }
 
-  function saveChat() {
-    const c = ctx();
-    try { c.saveChat?.(); } catch (_) {}
-    try { window.saveChatConditional?.(); } catch (_) {}
-    try { window.saveChat?.(); } catch (_) {}
-    try { c.saveMetadata?.(); } catch (_) {}
-    try { window.saveMetadataDebounced?.(); } catch (_) {}
-    try { window.insertOrAssignVariables?.({ [PLUGIN_ID]: c.chatMetadata?.extensions?.[PLUGIN_ID] }, { type: 'chat' }); } catch (_) {}
-  }
-
-  function init() {
-    if (ready) return;
-    if (!document.body) return;
-    mount();
-    ready = true;
-    bind();
-    restoreWindows();
-    subscribe();
-    status('准备好了。先填 API，再启用自动生成。');
-  }
-
-  function mount() {
-    if (document.getElementById(ROOT_ID)) return;
-    injectCriticalStyle();
-    const root = document.createElement('div');
-    root.id = ROOT_ID;
-    root.innerHTML = [
-      '<button class="stg-fab" data-stg-action="toggle" title="小剧场生成器">' + icon.masks + '</button>',
-      '<section class="stg-panel" data-stg-panel><div class="stg-panel-head"><div><div class="stg-title">小剧场生成器</div><div class="stg-subtle">v' + VERSION + ' · 独立 API</div></div><button class="stg-icon-btn" data-stg-action="close" title="关闭">' + icon.close + '</button></div>',
-      '<div class="stg-tabs">' + tab('general', icon.cog, 1, '总控') + tab('api', icon.api, 0, 'API') + tab('prompts', icon.file, 0, '提示词') + tab('history', icon.hist, 0, '历史收藏') + tab('run', icon.play, 0, '手动生成') + '</div>',
-      '<div class="stg-body"><div class="stg-section stg-active" data-stg-section="general"></div><div class="stg-section" data-stg-section="api"></div><div class="stg-section" data-stg-section="prompts"></div><div class="stg-section" data-stg-section="history"></div><div class="stg-section" data-stg-section="run"></div><div class="stg-status" data-stg-status></div></div></section>'
-    ].join('');
-    document.body.appendChild(root);
-    placeFab();
-    renderAll();
-  }
-
-  function injectCriticalStyle() {
-    if (document.getElementById('stg-critical-style')) return;
-    const style = document.createElement('style');
-    style.id = 'stg-critical-style';
-    style.textContent = '#stg-root{position:relative;z-index:2147483000}#stg-root .stg-fab{position:fixed!important;right:22px;bottom:92px;width:56px;height:56px;border-radius:50%;border:2px solid #ffffff;background:#126e82;color:#ffffff;box-shadow:0 12px 26px rgba(16,27,39,.38);display:grid;place-items:center;z-index:2147483001!important;touch-action:none;cursor:pointer}#stg-root .stg-fab svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}#stg-root .stg-panel{position:fixed;right:22px;bottom:150px;width:min(440px,calc(100vw - 24px));max-height:min(720px,calc(100vh - 32px));background:#f8fafc;color:#1d252f;border:1px solid rgba(30,41,59,.18);border-radius:8px;box-shadow:0 20px 60px rgba(15,23,42,.3);overflow:hidden;z-index:2147483000;display:none}#stg-root .stg-panel.stg-open{display:flex;flex-direction:column}';
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function tab(id, svg, active, title) { return '<button class="stg-tab ' + (active ? 'stg-active' : '') + '" data-stg-tab="' + id + '" title="' + title + '">' + svg + '</button>'; }
-  function bind() {
-    document.addEventListener('click', onClick, true);
-    document.addEventListener('change', onChange, true);
-    document.addEventListener('input', onInput, true);
-    const fab = document.querySelector('#' + ROOT_ID + ' .stg-fab');
-    fab?.addEventListener('pointerdown', down);
-    fab?.addEventListener('pointermove', move);
-    fab?.addEventListener('pointerup', up);
-    fab?.addEventListener('pointercancel', up);
-  }
-
-  function down(e) {
-    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, right: settings.fab.right, bottom: settings.fab.bottom, moved: false };
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
-  }
-  function move(e) {
-    if (!drag || drag.id !== e.pointerId) return;
-    const fab = e.currentTarget;
-    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (Math.abs(dx) + Math.abs(dy) > 6) drag.moved = true;
-    settings.fab.right = clamp(drag.right - dx, 8, Math.max(8, innerWidth - fab.offsetWidth - 8));
-    settings.fab.bottom = clamp(drag.bottom - dy, 8, Math.max(8, innerHeight - fab.offsetHeight - 8));
-    placeFab();
-  }
-  function up(e) {
-    if (!drag || drag.id !== e.pointerId) return;
-    const clicked = !drag.moved;
-    drag = null;
-    saveSettings();
-    if (clicked) {
-      suppressFabClickUntil = Date.now() + 350;
-      togglePanel();
-    }
-  }
-  function placeFab() {
-    const fab = document.querySelector('#' + ROOT_ID + ' .stg-fab');
-    const panel = document.querySelector('#' + ROOT_ID + ' [data-stg-panel]');
-    if (fab) { fab.style.right = settings.fab.right + 'px'; fab.style.bottom = settings.fab.bottom + 'px'; }
-    if (panel) { panel.style.right = Math.max(12, settings.fab.right) + 'px'; panel.style.bottom = Math.max(72, settings.fab.bottom + 58) + 'px'; }
-  }
-
-  function onClick(e) {
-    const tabEl = e.target?.closest?.('[data-stg-tab]');
-    const act = e.target?.closest?.('[data-stg-action]');
-    const tact = e.target?.closest?.('[data-stg-theater-action]');
-    const root = document.getElementById(ROOT_ID);
-    if (tabEl && root?.contains(tabEl)) { e.preventDefault(); e.stopPropagation(); setTab(tabEl.dataset.stgTab); return; }
-    if (act && (root?.contains(act) || act.closest('.stg-theater-window'))) {
-      e.preventDefault(); e.stopPropagation();
-      if (act.dataset.stgAction === 'toggle' && Date.now() < suppressFabClickUntil) return;
-      action(act.dataset.stgAction, act); return;
-    }
-    if (tact) { e.preventDefault(); e.stopPropagation(); theaterAction(tact.dataset.stgTheaterAction, tact); }
-  }
-  function onChange(e) {
-    const el = e.target;
-    if (el?.dataset?.stgAction === 'importPrompts') return importPrompts(el);
-    if (el?.matches?.('[data-stg-setting],[data-stg-profile],[data-stg-prompt-field]')) field(el);
-  }
-  function onInput(e) {
-    const el = e.target;
-    if (!el?.matches?.('[data-stg-setting],[data-stg-profile],[data-stg-prompt-field]') || el.type === 'checkbox' || el.tagName === 'SELECT') return;
-    field(el);
-  }
-
-  function togglePanel(force) {
-    const p = document.querySelector('#' + ROOT_ID + ' [data-stg-panel]');
-    if (!p) return;
-    p.classList.toggle('stg-open', typeof force === 'boolean' ? force : !p.classList.contains('stg-open'));
-    if (p.classList.contains('stg-open')) renderAll();
-  }
-  function setTab(name) {
-    document.querySelectorAll('#' + ROOT_ID + ' [data-stg-tab]').forEach(b => b.classList.toggle('stg-active', b.dataset.stgTab === name));
-    document.querySelectorAll('#' + ROOT_ID + ' [data-stg-section]').forEach(s => s.classList.toggle('stg-active', s.dataset.stgSection === name));
-    render(name);
-  }
-  function renderAll() { ['general', 'api', 'prompts', 'history', 'run'].forEach(render); }
-  function render(name) {
-    const el = document.querySelector('#' + ROOT_ID + ' [data-stg-section="' + name + '"]');
-    if (!el) return;
-    if (name === 'general') el.innerHTML = generalHtml();
-    if (name === 'api') el.innerHTML = apiHtml();
-    if (name === 'prompts') el.innerHTML = promptsHtml();
-    if (name === 'history') el.innerHTML = historyHtml();
-    if (name === 'run') el.innerHTML = '<div class="stg-grid"><div class="stg-subtle">手动使用最后一条正常 AI 回复生成小剧场。</div><button class="stg-action stg-primary" data-stg-action="manual">' + icon.play + '生成最后一条</button><button class="stg-action" data-stg-action="restore">' + icon.refresh + '恢复当前聊天显示窗</button></div>';
-  }
-  function row(label, body) { return '<div class="stg-row"><div class="stg-label">' + html(label) + '</div>' + body + '</div>'; }
-  function sw(key, label, hint, checked, chat) { return '<div class="stg-row-inline"><div><div class="stg-label">' + html(label) + '</div><div class="stg-subtle">' + html(hint) + '</div></div><label class="stg-switch"><input type="checkbox" data-stg-setting="' + attr(key) + '"' + (chat ? ' data-stg-chat-setting="1"' : '') + (checked ? ' checked' : '') + '><span class="stg-slider"></span></label></div>'; }
-  function sel(key, val, opts, data) { return '<select class="stg-select" ' + (data || 'data-stg-setting') + '="' + attr(key) + '">' + opts.map(o => '<option value="' + attr(o[0]) + '"' + (String(o[0]) === String(val) ? ' selected' : '') + '>' + html(o[1]) + '</option>').join('') + '</select>'; }
-  function generalHtml() {
-    const s = chatStore();
-    return '<div class="stg-grid">' +
-      sw('globalEnabled', '插件总开关', '关闭后所有自动/手动生成都会停用。', settings.globalEnabled) +
-      sw('autoGenerate', 'AI 回复后自动生成', '默认关闭，避免刚安装就消耗 API。', settings.autoGenerate) +
-      sw('chatEnabled', '当前聊天启用', '只影响当前聊天记录。', s.chatEnabled, true) +
-      sw('sendCharacterCard', '发送角色卡设定', '会尽力读取角色名、描述、性格、场景等字段。', settings.sendCharacterCard) +
-      sw('sendWorldInfo', '发送已启用世界书条目', '能读取到多少发多少，读取不到则跳过。', settings.sendWorldInfo) +
-      sw('includeLastUser', '始终发送用户上一条消息', '上下文深度为 0 时也会发送上一条用户消息。', settings.includeLastUser) +
-      row('上下文快捷深度', sel('contextPreset', settings.contextPreset, [['0', '不发送'], ['5', '最近 5 条'], ['10', '最近 10 条'], ['20', '最近 20 条'], ['custom', '手动输入']])) +
-      row('手动上下文条数', '<input class="stg-input" data-stg-setting="contextDepth" type="number" min="0" max="80" value="' + Number(settings.contextDepth || 0) + '">') +
-      row('多提示词模式', sel('promptMode', settings.promptMode, [['merged', '合并一次生成'], ['separate', '每条分别生成']])) +
-      sw('renderScripts', '危险：沙盒渲染脚本', '关闭时保留 HTML 但不执行脚本；打开后用 iframe sandbox 渲染。', settings.renderScripts) +
-      '</div>';
-  }
-  function profile() {
-    let p = settings.profiles.find(x => x.id === settings.activeProfileId);
-    if (!p) { p = settings.profiles[0]; settings.activeProfileId = p.id; }
-    return p;
-  }
-  function apiInput(k, label, type, step) { const p = profile(); return row(label, '<input class="stg-input" data-stg-profile="' + k + '" type="' + (type || 'text') + '"' + (step ? ' step="' + step + '"' : '') + ' value="' + attr(p[k] ?? '') + '">'); }
-  function apiHtml() {
-    const p = profile();
-    return '<div class="stg-grid">' +
-      row('当前 API 档案', sel('activeProfileId', settings.activeProfileId, settings.profiles.map(x => [x.id, x.name || '未命名档案']))) +
-      '<div class="stg-button-row"><button class="stg-action" data-stg-action="addProfile">' + icon.file + '新增档案</button><button class="stg-action" data-stg-action="delProfile">' + icon.trash + '删除档案</button><button class="stg-action" data-stg-action="models">' + icon.refresh + '获取模型</button></div>' +
-      apiInput('name', '档案名') + apiInput('baseUrl', 'API 地址') + apiInput('apiKey', 'API Key', 'password') + apiInput('model', '模型名称') + apiInput('temperature', '温度', 'number', '0.1') + apiInput('maxTokens', '最大输出长度', 'number', '1') +
-      sw('profile.stream', '流式输出', '部分模型流式更稳定，可自行切换。', !!p.stream) +
-      '<button class="stg-action stg-primary" data-stg-action="test">' + icon.play + '测试生成</button></div>';
-  }
-  function promptsHtml() {
-    return '<div class="stg-grid"><div class="stg-button-row"><button class="stg-action stg-primary" data-stg-action="addPrompt">' + icon.file + '新增提示词</button><button class="stg-action" data-stg-action="exportPrompts">' + icon.copy + '导出</button><label class="stg-action">' + icon.save + '导入<input class="stg-hidden" type="file" accept="application/json" data-stg-action="importPrompts"></label></div><div class="stg-list">' + (settings.prompts.map(promptCard).join('') || '<div class="stg-subtle">还没有提示词。</div>') + '</div></div>';
-  }
-  function promptCard(p, i) {
-    return '<div class="stg-card" data-stg-prompt-id="' + attr(p.id) + '"><div class="stg-card-head"><div class="stg-card-name">' + html(p.name || '未命名提示词') + '</div><span class="stg-pill">' + html(p.category || '未分类') + '</span></div>' +
-      '<div class="stg-row-inline"><span class="stg-label">启用</span><label class="stg-switch"><input type="checkbox" data-stg-prompt-field="enabled"' + (p.enabled ? ' checked' : '') + '><span class="stg-slider"></span></label></div>' +
-      pInput('name', '名称', p.name) + pInput('category', '分类', p.category) + pInput('note', '备注', p.note) +
-      '<div class="stg-row"><div class="stg-label">正文</div><textarea class="stg-textarea" data-stg-prompt-field="text">' + html(p.text || '') + '</textarea></div>' +
-      '<div class="stg-button-row"><button class="stg-icon-btn" data-stg-action="pUp" title="上移"' + (i === 0 ? ' disabled' : '') + '>' + icon.up + '</button><button class="stg-icon-btn" data-stg-action="pDown" title="下移"' + (i === settings.prompts.length - 1 ? ' disabled' : '') + '>' + icon.down + '</button><button class="stg-icon-btn" data-stg-action="pCopy" title="复制提示词">' + icon.copy + '</button><button class="stg-icon-btn" data-stg-action="pDel" title="删除提示词">' + icon.trash + '</button></div></div>';
-  }
-  function pInput(k, label, value) { return row(label, '<input class="stg-input" data-stg-prompt-field="' + k + '" value="' + attr(value || '') + '">'); }
-  function historyHtml() {
-    const s = chatStore();
-    const all = Object.entries(s.theaters || {}).flatMap(([messageKey, d]) => [d.current && Object.assign({ messageKey, current: true }, d.current)].concat((d.favorites || []).map(f => Object.assign({ messageKey, current: false }, f))).filter(Boolean)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    return '<div class="stg-grid">' + (all.map(x => '<div class="stg-card"><div class="stg-card-head"><div class="stg-card-name">' + html(x.title || '小剧场') + '</div><span class="stg-pill">' + (x.current ? '当前' : '收藏') + '</span></div><div class="stg-subtle">消息 ' + html(x.messageKey) + '</div><button class="stg-action" data-stg-action="jump" data-message-key="' + attr(x.messageKey) + '">' + icon.play + '定位</button></div>').join('') || '<div class="stg-subtle">当前聊天还没有小剧场。</div>') + '</div>';
-  }
-
-  function field(el) {
-    if (el.dataset.stgChatSetting) { chatStore().chatEnabled = !!el.checked; saveChat(); status('当前聊天开关已保存。'); return; }
-    if (el.dataset.stgSetting) {
-      const k = el.dataset.stgSetting;
-      if (k === 'profile.stream') profile().stream = !!el.checked;
-      else if (el.type === 'checkbox') settings[k] = !!el.checked;
-      else if (k === 'contextDepth') { settings.contextDepth = Math.max(0, Number(el.value || 0)); settings.contextPreset = 'custom'; }
-      else { settings[k] = el.value; if (k === 'contextPreset' && el.value !== 'custom') settings.contextDepth = Number(el.value || 0); }
-      saveSettings(); renderAll(); return;
-    }
-    if (el.dataset.stgProfile) {
-      const k = el.dataset.stgProfile;
-      profile()[k] = (k === 'temperature' || k === 'maxTokens') ? Number(el.value || 0) : el.value;
-      saveSettings(); return;
-    }
-    if (el.dataset.stgPromptField) {
-      const p = settings.prompts.find(x => x.id === el.closest('[data-stg-prompt-id]')?.dataset.stgPromptId);
-      if (!p) return;
-      p[el.dataset.stgPromptField] = el.type === 'checkbox' ? !!el.checked : el.value;
-      saveSettings();
-      if (['name', 'category'].includes(el.dataset.stgPromptField)) render('prompts');
-    }
-  }
-
-  function action(name, el) {
-    if (name === 'toggle') {
-      if (Date.now() < suppressFabClickUntil) return;
-      return togglePanel();
-    }
-    if (name === 'close') return togglePanel(false);
-    if (name === 'addProfile') { const p = { id: makeId(), name: '新档案', baseUrl: '', apiKey: '', model: '', temperature: 0.9, maxTokens: 800, stream: false }; settings.profiles.push(p); settings.activeProfileId = p.id; saveSettings(); renderAll(); }
-    if (name === 'delProfile') { if (settings.profiles.length <= 1) return status('至少保留一个 API 档案。'); settings.profiles = settings.profiles.filter(p => p.id !== settings.activeProfileId); settings.activeProfileId = settings.profiles[0].id; saveSettings(); renderAll(); }
-    if (name === 'models') return getModels();
-    if (name === 'test') return testApi();
-    if (name === 'addPrompt') { settings.prompts.push({ id: makeId(), name: '新小剧场', category: '通用', note: '', enabled: true, text: '' }); saveSettings(); render('prompts'); }
-    if (name === 'pCopy') return promptCopy(el);
-    if (name === 'pDel') return promptDel(el);
-    if (name === 'pUp') return promptMove(el, -1);
-    if (name === 'pDown') return promptMove(el, 1);
-    if (name === 'exportPrompts') return exportPrompts();
-    if (name === 'importPrompts') return importPrompts(el);
-    if (name === 'manual') return manual();
-    if (name === 'restore') return restoreWindows();
-    if (name === 'jump') return jump(el.dataset.messageKey);
-  }
-  function promptByEl(el) { return el.closest('[data-stg-prompt-id]')?.dataset.stgPromptId; }
-  function promptCopy(el) { const p = settings.prompts.find(x => x.id === promptByEl(el)); if (!p) return; settings.prompts.push(Object.assign({}, clone(p), { id: makeId(), name: (p.name || '提示词') + ' 副本' })); saveSettings(); render('prompts'); }
-  function promptDel(el) { settings.prompts = settings.prompts.filter(p => p.id !== promptByEl(el)); saveSettings(); render('prompts'); }
-  function promptMove(el, d) { const i = settings.prompts.findIndex(p => p.id === promptByEl(el)); const j = i + d; if (i < 0 || j < 0 || j >= settings.prompts.length) return; [settings.prompts[i], settings.prompts[j]] = [settings.prompts[j], settings.prompts[i]]; saveSettings(); render('prompts'); }
-  function exportPrompts() { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({ version: 1, prompts: settings.prompts }, null, 2)], { type: 'application/json' })); a.download = 'stage-theater-prompts.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
-  async function importPrompts(input) {
-    const file = input.files?.[0]; if (!file) return;
-    try {
-      const data = JSON.parse(await file.text());
-      const arr = Array.isArray(data) ? data : data.prompts;
-      if (!Array.isArray(arr)) throw new Error('bad json');
-      const clean = arr.map(p => ({ id: makeId(), name: String(p.name || '导入提示词'), category: String(p.category || '导入'), note: String(p.note || ''), enabled: p.enabled !== false, text: String(p.text || p.prompt || '') })).filter(p => p.text.trim());
-      settings.prompts.push(...clean); saveSettings(); render('prompts'); status('已导入 ' + clean.length + ' 条提示词。');
-    } catch (_) { status('导入失败：JSON 格式不对。'); }
-    input.value = '';
-  }
-
-  function subscribe() {
-    const c = ctx(), es = c.eventSource || window.eventSource, types = c.event_types || window.event_types || {};
-    const events = [types.MESSAGE_RECEIVED, types.MESSAGE_UPDATED, types.GENERATION_ENDED].filter(Boolean);
-    if (es?.on) events.concat(events.length ? [] : ['message_received', 'message_updated', 'generation_ended']).forEach(n => { try { es.on(n, () => setTimeout(() => maybeAuto(n), 350)); } catch (_) {} });
-    setInterval(() => maybeAuto('poll'), 2500);
-  }
-  function chat() { return Array.isArray(ctx().chat) ? ctx().chat : []; }
-  function keyOf(i, m) { return String(m?.id ?? m?.swipe_id ?? m?.send_date ?? m?.gen_id ?? i); }
-  function lastAssistant() {
-    const arr = chat();
-    for (let i = arr.length - 1; i >= 0; i--) {
-      const m = arr[i] || {};
-      if (m.is_user || m.role === 'user' || m.role === 'system' || m.is_system) continue;
-      const text = String(m.mes ?? m.content ?? '').trim();
-      if (text) return { index: i, key: keyOf(i, m), message: m, text };
-    }
-    return null;
-  }
-  async function maybeAuto(source) {
-    if (busy || !settings.globalEnabled || !settings.autoGenerate || !chatStore().chatEnabled) return;
-    const m = lastAssistant();
-    if (!m || m.message?.is_incomplete || m.message?.interrupted || /^(error|exception|failed|network error|api error)[:：]/i.test(m.text)) return;
-    const sig = m.key + ':' + hash(m.text);
-    if (sig === lastSignature) return;
-    if (sig !== pendingSignature) {
-      pendingSignature = sig;
-      pendingSince = Date.now();
-      return;
-    }
-    if (Date.now() - pendingSince < 700) return;
-    lastSignature = sig;
-    await generate(m, source);
-  }
-  async function manual() { const m = lastAssistant(); if (!m) return status('没有找到可用的 AI 回复。'); await generate(m, 'manual'); }
-
-  async function generate(msg, source) {
-    if (!settings.globalEnabled) return status('插件总开关关闭。');
-    if (!chatStore().chatEnabled) return status('当前聊天开关关闭。');
-    const p = profile();
-    const prompts = settings.prompts.filter(x => x.enabled && String(x.text || '').trim());
-    if (!p.baseUrl || !p.apiKey || !p.model) return status('请先配置 API 地址、密钥和模型。');
-    if (!prompts.length) return status('请至少启用一条小剧场提示词。');
-    busy = true;
-    const store = chatStore();
-    const old = store.theaters[msg.key] || { favorites: [] };
-    store.theaters[msg.key] = { current: { id: makeId(), title: '小剧场生成中', content: '正在生成小剧场...', status: 'loading', createdAt: Date.now() }, favorites: old.favorites || [] };
-    renderWindow(msg, store.theaters[msg.key]);
-    status('正在生成小剧场...');
-    try {
-      let content = '';
-      if (settings.promptMode === 'separate' && prompts.length > 1) {
-        const sections = [];
-        for (const prompt of prompts) {
-          const req = buildRequest(msg, [prompt]);
-          let part = '';
-          if (p.stream) {
-            part = await requestStream(p, req.system, req.user, delta => {
-              part += delta;
-              const live = chatStore().theaters[msg.key];
-              if (live?.current) {
-                const preview = sections.join('') + '<section><h3>' + html(prompt.name || '小剧场') + '</h3>' + part + '</section>';
-                live.current.content = preview;
-                renderWindow(msg, live);
-              }
-            });
-          } else {
-            part = await requestOnce(p, req.system, req.user);
-          }
-          if (part) sections.push('<section><h3>' + html(prompt.name || '小剧场') + '</h3>' + part + '</section>');
-        }
-        content = sections.join('');
-      } else {
-        const req = buildRequest(msg, prompts);
-        if (p.stream) content = await requestStream(p, req.system, req.user, d => {
-          content += d;
-          const live = chatStore().theaters[msg.key];
-          if (live?.current) {
-            live.current.content = content || '正在生成小剧场...';
-            renderWindow(msg, live);
-          }
-        });
-        else content = await requestOnce(p, req.system, req.user);
-      }
-      if (!content) throw new Error('空响应');
-      const fresh = { id: makeId(), title: prompts.length === 1 ? prompts[0].name : '合并小剧场 · ' + prompts.length + ' 条提示词', content, promptNames: prompts.map(x => x.name), sourceHash: hash(msg.text), source, createdAt: Date.now(), status: 'done' };
-      const now = chatStore().theaters[msg.key] || { favorites: [] };
-      chatStore().theaters[msg.key] = { current: fresh, favorites: now.favorites || [] };
-      saveChat(); renderWindow(msg, chatStore().theaters[msg.key]); render('history'); status('小剧场生成完成。');
-    } catch (e) {
-      const s = chatStore().theaters[msg.key] || { favorites: [] };
-      s.current = Object.assign({}, s.current, { title: '生成失败', content: '生成失败：' + (e.message || '请求异常'), status: 'error' });
-      chatStore().theaters[msg.key] = s; renderWindow(msg, s); status('生成失败：' + (e.message || '请求异常'));
-    } finally { busy = false; }
-  }
-
-  function buildRequest(msg, prompts) {
-    const promptBlock = prompts.map((p, i) => '【小剧场提示词 ' + (i + 1) + '：' + (p.name || '未命名') + '】\n分类：' + (p.category || '无') + '\n备注：' + (p.note || '无') + '\n' + p.text).join('\n\n');
-    const mode = settings.promptMode === 'separate' ? '如果有多条提示词，请分别生成对应小剧场，并用清晰 HTML 区块分隔。' : '如果有多条提示词，请合并理解成一次任务，生成一个完整回复；需要多个小剧场时，请自行分区并美化 HTML。';
-    const system = ['你是“小剧场生成器”。你只根据用户提供的材料，为聊天中的最新 AI 回复生成额外小剧场。', '必须贴合角色卡设定、当前对话、用户上一条消息和可选世界书。', '可以输出基础 HTML 标签用于排版，例如 div、section、details、summary、p、br、strong、em、ul、li、blockquote。', '不要解释任务，不要输出安全声明，不要复述输入材料。', mode, '以下是用户启用的小剧场提示词：\n' + promptBlock].join('\n\n');
-    const parts = [];
-    const char = settings.sendCharacterCard ? characterCard() : '';
-    const world = settings.sendWorldInfo ? worldInfo() : '';
-    const context = contextBlock(msg.index);
-    const user = settings.includeLastUser ? lastUserBefore(msg.index) : '';
-    if (char) parts.push('【角色卡设定】\n' + char);
-    if (world) parts.push('【已启用世界书条目】\n' + world);
-    if (context) parts.push('【最近聊天上下文】\n' + context);
-    if (user) parts.push('【用户上一条消息】\n' + user);
-    parts.push('【触发小剧场的 AI 回复】\n' + msg.text);
-    parts.push('请现在生成小剧场正文。');
-    return { system, user: parts.join('\n\n') };
-  }
-  function contextBlock(last) {
-    const depth = Math.max(0, Number(settings.contextDepth || 0)); if (!depth) return '';
-    return chat().slice(Math.max(0, last - depth + 1), last + 1).map(m => (m.is_user || m.role === 'user' ? '用户' : (m.role === 'system' || m.is_system ? '系统' : 'AI')) + (m.name ? '（' + m.name + '）' : '') + '：' + String(m.mes ?? m.content ?? '').trim()).join('\n');
-  }
-  function lastUserBefore(i) { const arr = chat(); for (let n = i - 1; n >= 0; n--) if (arr[n]?.is_user || arr[n]?.role === 'user') return String(arr[n].mes ?? arr[n].content ?? '').trim(); return ''; }
-  function characterCard() {
-    const c = ctx();
-    const card = [c.character, c.characters?.[c.characterId], c.characters?.[c.this_chid], window.characters?.[window.this_chid], c.char].find(Boolean) || {};
-    return [['角色名', card.name || c.name2 || window.name2], ['描述', card.description || card.desc], ['性格', card.personality], ['场景', card.scenario], ['第一条消息', card.first_mes || card.firstMessage], ['示例对话', card.mes_example || card.example_dialogue], ['备注', card.creator_notes || card.creatorNotes]].filter(x => x[1]).map(x => x[0] + '：' + String(x[1]).trim()).join('\n\n').slice(0, 12000);
-  }
-  function worldInfo() {
-    const c = ctx(), pools = [c.world_info, c.worldInfo, c.worlds, window.world_info, window.worldInfo].filter(Boolean), out = [];
-    const walk = v => {
-      if (!v || out.length > 80) return;
-      if (Array.isArray(v)) return v.forEach(walk);
-      if (typeof v === 'object') {
-        const disabled = v.disable === true || v.disabled === true || v.enabled === false;
-        const content = v.content || v.entry || v.text;
-        if (content && !disabled) out.push('【' + String(v.comment || v.name || v.key || '世界书条目').slice(0, 80) + '】\n' + String(content).trim());
-        else Object.values(v).forEach(walk);
-      }
-    };
-    pools.forEach(walk);
-    return out.join('\n\n').slice(0, 18000);
-  }
-
-  function urls(base, path) {
-    base = String(base || '').replace(/\/+$/, '');
-    if (!base) return [];
-    return /\/v1$/i.test(base) ? [base + path, base.replace(/\/v1$/i, '') + path] : [base + path, base + '/v1' + path];
-  }
-  function headers(p) { return { 'Content-Type': 'application/json', Authorization: 'Bearer ' + p.apiKey }; }
-  function body(p, system, user, stream) { return JSON.stringify({ model: p.model, temperature: Number(p.temperature ?? 0.9), max_tokens: Number(p.maxTokens ?? 800), stream: !!stream, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }); }
-  async function requestOnce(p, system, user) {
-    for (const url of urls(p.baseUrl, '/chat/completions')) {
-      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 60000);
-      try { const r = await fetch(url, { method: 'POST', headers: headers(p), body: body(p, system, user, false), signal: ctl.signal }); if (r.ok) { const d = await r.json(); return d?.choices?.[0]?.message?.content || d?.choices?.[0]?.text || ''; } } catch (_) {} finally { clearTimeout(timer); }
-    }
-    return '';
-  }
-  async function requestStream(p, system, user, onDelta) {
-    for (const url of urls(p.baseUrl, '/chat/completions')) {
-      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 90000);
+  function row(label, content) { return '<div class="stg-row"><label class="stg-label">' + escapeHtml(label) + '</label>' + content + '</div>'; }
+  function switchHtml(key, label, hint, checked, chatSetting) { return '<div class="stg-row-inline"><div><div class="stg-label">' + escapeHtml(label) + '</div><div class="stg-subtle">' + escapeHtml(hint) + '</div></div><label class="stg-switch"><input type="checkbox" data-stg-setting="' + escapeHtml(key) + '"' + (chatSetting ? ' data-stg-chat="1"' : '') + (checked ? ' checked' : '') + '><span class="stg-slider"></span></label></div>'; }
+  function selectHtml(key, value, options, prefix) { return '<select class="stg-select" ' + (prefix || 'data-stg-setting') + '="' + escapeHtml(key) + '">' + options.map(function (o) { return '<option value="' + escapeHtml(o[0]) + '"' + (String(o[0]) === String(value) ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>'; }).join('') + '</select>'; }
+  function renderAll() { ['general', 'api', 'prompts', 'history', 'manual'].forEach(render); }
+  function render(name) { const el = document.querySelector('#' + ROOT_ID + ' [data-stg-section="' + name + '"]'); if (!el) return; if (name === 'general') el.innerHTML = generalHtml(); if (name === 'api') el.innerHTML = apiHtml(); if (name === 'prompts') el.innerHTML = promptsHtml(); if (name === 'history') el.innerHTML = historyHtml(); if (name === 'manual') el.innerHTML = '<div class="stg-grid"><div class="stg-subtle">对当前聊天最后一条正常 AI 回复手动生成。</div><button class="stg-action stg-primary" data-stg-action="manual">生成最后一条</button><button class="stg-action" data-stg-action="restore">恢复窗口</button></div>'; }
+  function generalHtml() { const data = chatData(); return '<div class="stg-grid">' + switchHtml('enabled', '插件总开关', '关闭后自动和手动生成都停止。', !!settings.enabled) + switchHtml('autoGenerate', 'AI 回复完成后自动生成', '默认关闭，只处理完整正常的 AI 回复。', !!settings.autoGenerate) + switchHtml('chatEnabled', '当前聊天启用', '每个聊天可单独关闭。', !!data.enabled, true) + switchHtml('sendCharacterCard', '发送角色卡设定', '发送当前角色卡能读取到的设定。', !!settings.sendCharacterCard) + switchHtml('sendWorldbook', '发送已启用世界书条目', '尽力读取当前壳暴露的启用条目。', !!settings.sendWorldbook) + switchHtml('sendPreviousUser', '发送用户上一条消息', '上下文为 0 时仍可发送。', !!settings.sendPreviousUser) + row('上下文深度', selectHtml('contextDepth', String(settings.contextDepth), [['0', '只发送当前 AI 回复'], ['5', '最近 5 条'], ['10', '最近 10 条'], ['20', '最近 20 条'], ['custom', '自定义条数']])) + row('自定义条数', '<input class="stg-input" type="number" min="0" max="100" data-stg-setting="customContext" value="' + Number(settings.contextDepth || 0) + '">') + row('多提示词处理', selectHtml('promptMode', settings.promptMode, [['merged', '合并后请求一次 API'], ['separate', '分别请求并分区显示']])) + switchHtml('allowScripts', '在沙盒中渲染 JS', '默认只保留 HTML；打开后使用 sandbox iframe。', !!settings.allowScripts) + '</div>'; }
+  function currentProfile() { let profile = settings.profiles.find(function (x) { return x.id === settings.activeProfile; }); if (!profile) { profile = settings.profiles[0]; settings.activeProfile = profile.id; } return profile; }
+  function apiHtml() { const p = currentProfile(); function input(key, label, type) { return row(label, '<input class="stg-input" data-stg-profile="' + escapeHtml(key) + '" type="' + (type || 'text') + '" value="' + escapeHtml(p[key] == null ? '' : p[key]) + '">'); } return '<div class="stg-grid">' + row('API 档案', selectHtml('activeProfile', settings.activeProfile, settings.profiles.map(function (x) { return [x.id, x.name || '未命名']; }))) + '<div class="stg-button-row"><button class="stg-action" data-stg-action="addProfile">新增档案</button><button class="stg-action" data-stg-action="deleteProfile">删除档案</button><button class="stg-action" data-stg-action="models">获取模型</button></div>' + input('name', '档案名称') + input('baseUrl', 'API 地址') + input('apiKey', 'API Key', 'password') + input('model', '模型名称') + input('temperature', '温度', 'number') + input('maxTokens', '最大输出长度', 'number') + switchHtml('stream', '流式输出', '按当前档案选择普通或流式请求。', !!p.stream) + '<button class="stg-action stg-primary" data-stg-action="test">测试 API</button></div>'; }
+  function promptsHtml() { return '<div class="stg-grid"><div class="stg-button-row"><button class="stg-action stg-primary" data-stg-action="addPrompt">新增提示词</button><button class="stg-action" data-stg-action="exportPrompts">导出</button><label class="stg-action">导入<input class="stg-hidden" type="file" accept="application/json" data-stg-import="1"></label></div><div class="stg-list">' + (settings.prompts.length ? settings.prompts.map(promptCard).join('') : '<div class="stg-subtle">没有提示词。</div>') + '</div></div>'; }
+  function promptCard(prompt, index) { return '<article class="stg-card" data-stg-prompt-id="' + escapeHtml(prompt.id) + '"><div class="stg-card-head"><strong>' + escapeHtml(prompt.name || '未命名') + '</strong><span class="stg-pill">' + escapeHtml(prompt.category || '未分类') + '</span></div>' + row('名称', '<input class="stg-input" data-stg-prompt="name" value="' + escapeHtml(prompt.name || '') + '">') + row('分类', '<input class="stg-input" data-stg-prompt="category" value="' + escapeHtml(prompt.category || '') + '">') + row('正文', '<textarea class="stg-textarea" data-stg-prompt="text">' + escapeHtml(prompt.text || '') + '</textarea>') + '<div class="stg-button-row"><button class="stg-icon-btn" data-stg-action="promptUp" title="上移">' + iconFor('up') + '</button><button class="stg-icon-btn" data-stg-action="promptDown" title="下移">' + iconFor('down') + '</button><button class="stg-icon-btn" data-stg-action="promptCopy" title="复制">' + iconFor('copy') + '</button><button class="stg-icon-btn" data-stg-action="promptDelete" title="删除">' + iconFor('trash') + '</button><label class="stg-subtle"><input type="checkbox" data-stg-prompt="enabled"' + (prompt.enabled ? ' checked' : '') + '> 启用</label></div></article>'; }
+  function exportPrompts() { const blob = new Blob([JSON.stringify(settings.prompts, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'stage-theater-prompts.json'; document.body.appendChild(link); link.click(); link.remove(); setTimeout(function () { URL.revokeObjectURL(link.href); }, 0); }
+  function importPrompts(input) { const file = input && input.files && input.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = function () { try { const value = JSON.parse(String(reader.result || '[]')); const list = Array.isArray(value) ? value : value.prompts; if (!Array.isArray(list)) throw new Error('格式不是提示词列表'); settings.prompts = list.map(function (item) { return { id: makeId(), name: String(item.name || '未命名'), category: String(item.category || '未分类'), note: String(item.note || ''), enabled: item.enabled !== false, text: String(item.text || item.prompt || '') }; }); saveSettings(); render('prompts'); setStatus('提示词导入完成。'); } catch (error) { setStatus('导入失败：' + error.message); } input.value = ''; }; reader.readAsText(file); }
+  function historyHtml() { return '<div class="stg-subtle">当前聊天的生成结果保存在消息下方窗口。收藏结果在这里按消息索引记录。</div>'; }
+  function updateField(el) { if (el.dataset.stgChat) { chatData().enabled = !!el.checked; saveChat(); return; } if (el.dataset.stgSetting) { const key = el.dataset.stgSetting; if (key === 'customContext') settings.contextDepth = Math.max(0, Number(el.value || 0)); else if (key === 'stream') currentProfile().stream = !!el.checked; else if (el.type === 'checkbox') settings[key] = !!el.checked; else if (key === 'contextDepth') settings.contextDepth = el.value === 'custom' ? settings.contextDepth : Number(el.value); else if (key === 'activeProfile') settings.activeProfile = el.value; else settings[key] = el.value; saveSettings(); renderAll(); return; } if (el.dataset.stgProfile) { const p = currentProfile(), key = el.dataset.stgProfile; p[key] = ['temperature', 'maxTokens'].includes(key) ? Number(el.value || 0) : el.value; saveSettings(); return; } if (el.dataset.stgPrompt) { const card = el.closest('[data-stg-prompt-id]'), prompt = settings.prompts.find(function (x) { return x.id === (card && card.dataset.stgPromptId); }); if (!prompt) return; prompt[el.dataset.stgPrompt] = el.type === 'checkbox' ? !!el.checked : el.value; saveSettings(); } }
+  function action(name, el) { if (name === 'toggle') return togglePanel(); if (name === 'close') return togglePanel(false); if (name === 'addProfile') { settings.profiles.push({ id: makeId(), name: '新 API 档案', baseUrl: '', apiKey: '', model: '', temperature: 0.9, maxTokens: 800, stream: false }); settings.activeProfile = settings.profiles[settings.profiles.length - 1].id; saveSettings(); render('api'); } else if (name === 'deleteProfile') { if (settings.profiles.length <= 1) return setStatus('至少保留一个 API 档案。'); settings.profiles = settings.profiles.filter(function (x) { return x.id !== settings.activeProfile; }); settings.activeProfile = settings.profiles[0].id; saveSettings(); render('api'); } else if (name === 'models') fetchModels(); else if (name === 'test') testApi(); else if (name === 'addPrompt') { settings.prompts.push({ id: makeId(), name: '新小剧场', category: '通用', note: '', enabled: true, text: '' }); saveSettings(); render('prompts'); } else if (name === 'promptDelete') { const card = el.closest('[data-stg-prompt-id]'); settings.prompts = settings.prompts.filter(function (x) { return x.id !== card.dataset.stgPromptId; }); saveSettings(); render('prompts'); } else if (name === 'promptCopy') { const card = el.closest('[data-stg-prompt-id]'), source = settings.prompts.find(function (x) { return x.id === card.dataset.stgPromptId; }); if (source) settings.prompts.push(Object.assign({}, clone(source), { id: makeId(), name: source.name + ' 副本' })); saveSettings(); render('prompts'); } else if (name === 'promptUp' || name === 'promptDown') { const card = el.closest('[data-stg-prompt-id]'), index = settings.prompts.findIndex(function (x) { return x.id === card.dataset.stgPromptId; }), target = index + (name === 'promptUp' ? -1 : 1); if (index >= 0 && target >= 0 && target < settings.prompts.length) { const item = settings.prompts.splice(index, 1)[0]; settings.prompts.splice(target, 0, item); saveSettings(); render('prompts'); } } else if (name === 'manual') { const message = lastAssistant(); if (message) generate(message, 'manual'); else setStatus('没有找到正常的 AI 回复。'); } else if (name === 'restore') restoreWindows(); }
+  function lastAssistant() { const list = messages(); for (let i = list.length - 1; i >= 0; i--) { if (!isAssistant(list[i])) continue; const text = bodyOf(list[i]).trim(); if (text) return { index: i, key: messageKey(i, list[i]), message: list[i], text: text }; } return null; }
+  function buildRequest(message) { const prompts = settings.prompts.filter(function (x) { return x.enabled && String(x.text || '').trim(); }); const promptBlock = prompts.map(function (p, i) { return '【提示词 ' + (i + 1) + '：' + p.name + '】\n' + p.text; }).join('\n\n'); const parts = []; if (settings.sendCharacterCard) parts.push('【角色卡设定】\n' + characterCard()); if (settings.sendWorldbook) parts.push('【已启用世界书】\n' + worldbook()); const depth = Math.max(0, Number(settings.contextDepth || 0)); if (depth) parts.push('【最近聊天上下文】\n' + messages().slice(Math.max(0, message.index - depth + 1), message.index + 1).map(function (m) { return (isUser(m) ? '用户' : isSystem(m) ? '系统' : 'AI') + '：' + bodyOf(m).trim(); }).join('\n')); if (settings.sendPreviousUser) { for (let i = message.index - 1; i >= 0; i--) if (isUser(messages()[i])) { parts.push('【用户上一条消息】\n' + bodyOf(messages()[i]).trim()); break; } } parts.push('【触发的 AI 回复】\n' + message.text); parts.push('【小剧场提示词】\n' + promptBlock); return { system: '你是独立小剧场生成器。只输出小剧场正文，不要解释任务，不要复述输入。可以使用基础 HTML 排版。' + (settings.promptMode === 'merged' ? '多条提示词合并理解，一次生成一个完整回复，自行分区。' : '多条提示词分别生成并用 HTML 区块分隔。'), user: parts.join('\n\n') }; }
+  function characterCard() { const c = context(), card = [c.character, c.characters && c.characters[c.characterId], c.characters && c.characters[c.this_chid], window.characters && window.characters[window.this_chid], c.char].find(function (x) { return x && typeof x === 'object'; }) || {}; return [['角色名', card.name || c.name2 || window.name2], ['描述', card.description || card.desc], ['性格', card.personality], ['场景', card.scenario], ['首条消息', card.first_mes || card.firstMessage], ['示例对话', card.mes_example || card.example_dialogue]].filter(function (x) { return x[1]; }).map(function (x) { return x[0] + '：' + String(x[1]).trim(); }).join('\n\n').slice(0, 16000); }
+  function worldbook() { const c = context(), pool = [c.world_info, c.worldInfo, c.worldbook, c.worlds, window.world_info, window.worldInfo].filter(Boolean), result = []; function walk(value) { if (!value || result.length > 100) return; if (Array.isArray(value)) return value.forEach(walk); if (typeof value !== 'object') return; const content = value.content || value.entry || value.text, disabled = value.disabled === true || value.disable === true || value.enabled === false; if (content && !disabled) result.push(String(content).trim()); else Object.values(value).forEach(walk); } pool.forEach(walk); return result.join('\n\n').slice(0, 20000); }
+  function endpoints(base, suffix) { const clean = String(base || '').replace(/\/+$/, ''); if (!clean) return []; return /\/v1$/i.test(clean) ? [clean + suffix, clean.replace(/\/v1$/i, '') + suffix] : [clean + suffix, clean + '/v1' + suffix]; }
+  async function fetchModels() { const profile = currentProfile(); if (!profile.baseUrl || !profile.apiKey) return setStatus('请先填写 API 地址和 API Key。'); setStatus('正在获取模型列表...'); for (const url of endpoints(profile.baseUrl, '/models')) { try { const response = await fetch(url, { headers: { Authorization: 'Bearer ' + profile.apiKey } }); if (!response.ok) continue; const data = await response.json(); const list = Array.isArray(data && data.data) ? data.data.map(function (item) { return item && item.id; }).filter(Boolean) : []; if (list.length) { profile.model = String(list[0]); saveSettings(); render('api'); return setStatus('已获取 ' + list.length + ' 个模型，已填入第一个。'); } } catch (_) {} } setStatus('获取模型失败，请检查地址、密钥和跨域设置。'); }
+  async function testApi() { const profile = currentProfile(); if (!profile.baseUrl || !profile.apiKey || !profile.model) return setStatus('请先填写 API 地址、API Key 和模型名称。'); setStatus('正在测试 API...'); try { const result = await request(profile, { system: '只回复 OK。', user: '连接测试。' }); setStatus(result ? 'API 连接成功。' : 'API 返回为空。'); } catch (error) { setStatus('API 测试失败：' + error.message); } }
+  async function request(profile, requestData) {
+    const payload = { model: profile.model, temperature: Number(profile.temperature || 0.9), max_tokens: Number(profile.maxTokens || 800), messages: [{ role: 'system', content: requestData.system }, { role: 'user', content: requestData.user }] };
+    for (const url of endpoints(profile.baseUrl, '/chat/completions')) {
+      const controller = new AbortController(), timer = setTimeout(function () { controller.abort(); }, 60000);
       try {
-        const r = await fetch(url, { method: 'POST', headers: headers(p), body: body(p, system, user, true), signal: ctl.signal });
-        if (!r.ok || !r.body) continue;
-        const reader = r.body.getReader(), dec = new TextDecoder();
-        let buffer = '', full = '';
+        const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + profile.apiKey }, body: JSON.stringify(Object.assign({}, payload, { stream: !!profile.stream })), signal: controller.signal });
+        if (!response.ok) continue;
+        if (!profile.stream || !response.body || !response.body.getReader) {
+          const data = await response.json();
+          return data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '';
+        }
+        const reader = response.body.getReader(), decoder = new TextDecoder(), chunks = [];
+        let buffer = '';
         while (true) {
-          const { value, done } = await reader.read(); if (done) break;
-          buffer += dec.decode(value, { stream: true });
-          const lines = buffer.split('\n'); buffer = lines.pop() || '';
-          for (const line of lines) {
-            const s = line.trim(); if (!s.startsWith('data:')) continue;
-            const payload = s.slice(5).trim(); if (!payload || payload === '[DONE]') continue;
-            try { const d = JSON.parse(payload); const delta = d?.choices?.[0]?.delta?.content || d?.choices?.[0]?.text || ''; if (delta) { full += delta; onDelta?.(delta); } } catch (_) {}
-          }
+          const part = await reader.read();
+          if (part.done) break;
+          buffer += decoder.decode(part.value, { stream: true });
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() || '';
+          lines.forEach(function (line) { const value = line.replace(/^data:\s*/, '').trim(); if (!value || value === '[DONE]') return; try { const item = JSON.parse(value), delta = item.choices && item.choices[0] && item.choices[0].delta; if (delta && delta.content) chunks.push(delta.content); } catch (_) {} });
         }
-        return full;
-      } catch (_) {} finally { clearTimeout(timer); }
+        return chunks.join('');
+      } catch (_) {
+        if (profile.stream) profile.stream = false;
+      } finally { clearTimeout(timer); }
     }
     return '';
   }
-  async function getModels() {
-    const p = profile(); status('正在获取模型列表...');
-    for (const url of urls(p.baseUrl, '/models')) {
-      try {
-        const r = await fetch(url, { headers: headers(p) });
-        if (!r.ok) continue;
-        const ids = (await r.json())?.data?.map?.(m => m.id).filter(Boolean) || [];
-        if (ids.length) { if (!p.model) p.model = ids[0]; saveSettings(); render('api'); return status('模型列表：' + ids.slice(0, 12).join(', ') + (ids.length > 12 ? ' ...' : '')); }
-      } catch (_) {}
-    }
-    status('模型列表获取失败，请检查 API 地址和密钥。');
-  }
-  async function testApi() { const text = await requestOnce(profile(), '你是连接测试助手。', '请只回复：小剧场 API 连接正常。'); status(text ? '测试成功：' + text.slice(0, 80) : '测试失败，请检查配置。'); }
-
-  function restoreWindows() {
-    const s = chatStore();
-    chat().forEach((m, i) => { if (m.is_user || m.role === 'user' || m.role === 'system' || m.is_system) return; const key = keyOf(i, m); if (s.theaters?.[key]?.current) renderWindow({ index: i, key, message: m, text: String(m.mes ?? m.content ?? '') }, s.theaters[key]); });
-    render('history');
-  }
-  function messageEl(index, text) {
-    let el = document.querySelector('[mesid="' + index + '"], [data-message-id="' + index + '"]');
-    if (el) return el;
-    const all = Array.from(document.querySelectorAll('#chat .mes, .mes'));
-    if (all[index]) return all[index];
-    const needle = String(text || '').slice(0, 60).trim();
-    return needle ? all.reverse().find(x => (x.textContent || '').includes(needle)) || null : null;
-  }
-  function renderWindow(msg, data) {
-    const anchor = messageEl(msg.index, msg.text); if (!anchor) return;
-    let host = anchor.querySelector(':scope > .stg-theater-host');
-    if (!host) { host = document.createElement('div'); host.className = 'stg-theater-host'; anchor.appendChild(host); }
-    const current = data.current || {}, favs = data.favorites || [];
-    host.innerHTML = '<div class="stg-theater-window" data-message-key="' + attr(msg.key) + '"><div class="stg-theater-head"><div class="stg-theater-title">' + icon.masks + '<span>' + html(current.title || '小剧场') + '</span></div><div class="stg-theater-tools">' + tbtn('collapse', icon.down, '折叠') + tbtn('regen', icon.refresh, '重新生成') + tbtn('fav', icon.star, '收藏') + tbtn('copy', icon.copy, '复制') + tbtn('edit', icon.edit, '编辑') + tbtn('del', icon.trash, '删除此条') + '</div></div>' + (favs.length ? '<div class="stg-fav-strip">' + favs.map((f, i) => '<button class="stg-fav-chip" data-stg-theater-action="showFav" data-fav-index="' + i + '">' + html(f.title || ('收藏 ' + (i + 1))) + '</button>').join('') + '</div>' : '') + '<div class="stg-theater-body"></div></div>';
-    renderContent(host.querySelector('.stg-theater-body'), current.content || '');
-  }
-  function tbtn(a, svg, title) { return '<button class="stg-icon-btn" data-stg-theater-action="' + a + '" title="' + title + '">' + svg + '</button>'; }
-  function renderContent(el, content) {
-    if (!el) return;
-    if (settings.renderScripts) { const frame = document.createElement('iframe'); frame.setAttribute('sandbox', 'allow-scripts'); frame.srcdoc = '<!doctype html><meta charset="utf-8"><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.58;color:#17212b;padding:10px;margin:0}img{max-width:100%}</style>' + String(content || ''); el.replaceChildren(frame); return; }
-    const tpl = document.createElement('template'); tpl.innerHTML = String(content || '');
-    tpl.content.querySelectorAll('script,iframe,object,embed,link,meta').forEach(x => x.remove());
-    tpl.content.querySelectorAll('*').forEach(x => [...x.attributes].forEach(a => { if (a.name.toLowerCase().startsWith('on') || /javascript:/i.test(a.value)) x.removeAttribute(a.name); }));
-    el.innerHTML = tpl.innerHTML;
-  }
-  function theaterAction(name, el) {
-    const win = el.closest('.stg-theater-window'), key = win?.dataset.messageKey, s = chatStore(), d = s.theaters?.[key]; if (!key || !d) return;
-    if (name === 'collapse') return win.classList.toggle('stg-collapsed');
-    if (name === 'regen') return regen(key);
-    if (name === 'fav') { d.favorites ||= []; d.favorites.unshift(Object.assign({}, clone(d.current), { id: makeId(), favoritedAt: Date.now(), title: (d.current?.title || '小剧场') + ' 收藏' })); saveChat(); restoreWindows(); return status('已收藏当前小剧场。'); }
-    if (name === 'copy') return navigator.clipboard?.writeText(d.current?.content || '').then(() => status('已复制。'), () => status('复制失败，当前环境不允许访问剪贴板。'));
-    if (name === 'edit') return edit(win, key);
-    if (name === 'del') { delete s.theaters[key]; saveChat(); win.closest('.stg-theater-host')?.remove(); render('history'); return status('已删除此条小剧场。'); }
-    if (name === 'showFav') { const fav = d.favorites?.[Number(el.dataset.favIndex || 0)]; if (fav) { d.current = Object.assign({}, clone(fav), { restoredAt: Date.now() }); saveChat(); restoreWindows(); } }
-  }
-  function regen(key) { const arr = chat(); for (let i = 0; i < arr.length; i++) if (keyOf(i, arr[i]) === key) return generate({ index: i, key, message: arr[i], text: String(arr[i].mes ?? arr[i].content ?? '') }, 'regenerate'); status('没找到原消息，无法重新生成。'); }
-  function edit(win, key) {
-    const d = chatStore().theaters[key], bodyEl = win.querySelector('.stg-theater-body');
-    bodyEl.innerHTML = '<textarea class="stg-edit-box">' + html(d.current?.content || '') + '</textarea><div class="stg-button-row" style="margin-top:8px"><button class="stg-action stg-primary" data-save-edit>' + icon.save + '保存编辑</button></div>';
-    bodyEl.querySelector('[data-save-edit]').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); d.current.content = bodyEl.querySelector('textarea').value; d.current.editedAt = Date.now(); saveChat(); restoreWindows(); status('编辑已保存。'); }, { once: true });
-  }
-  function jump(key) { document.querySelector('.stg-theater-window[data-message-key="' + css(key) + '"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-  function status(text) { const el = document.querySelector('#' + ROOT_ID + ' [data-stg-status]'); if (el) el.textContent = text || ''; console.log('[stage-theater]', text); }
-
-  const fire = () => { try { init(); } catch (e) { console.warn('[stage-theater] init failed', e); } };
-  const c = ctx(), es = c.eventSource || window.eventSource, types = c.event_types || window.event_types || {};
-  if (es?.on && types.APP_READY) { try { es.on(types.APP_READY, fire); } catch (_) {} }
-  const start = Date.now();
-  const timer = setInterval(() => {
-    if (window.extension_settings || window.SillyTavern || document.body || Date.now() - start > 3500) {
-      clearInterval(timer);
-      fire();
-    }
-  }, 250);
+  function messageElement(message) { const all = Array.from(document.querySelectorAll('#chat .mes, #chat [mesid], .mes')); return document.querySelector('#chat [mesid="' + message.index + '"]') || document.querySelector('[mesid="' + message.index + '"]') || all[message.index] || null; }
+  function sanitizeHtml(value) { const box = document.createElement('div'); box.innerHTML = String(value || ''); box.querySelectorAll('script, iframe, object, embed, link, meta').forEach(function (node) { node.remove(); }); box.querySelectorAll('*').forEach(function (node) { Array.from(node.attributes).forEach(function (attribute) { if (/^on/i.test(attribute.name) || /^(javascript|vbscript):/i.test(attribute.value)) node.removeAttribute(attribute.name); }); }); return box.innerHTML; }
+  function renderContent(body, content) { body.innerHTML = ''; if (settings.allowScripts && /<script\b/i.test(String(content || ''))) { const frame = document.createElement('iframe'); frame.setAttribute('sandbox', 'allow-scripts'); frame.setAttribute('referrerpolicy', 'no-referrer'); frame.srcdoc = String(content || ''); body.appendChild(frame); } else body.innerHTML = sanitizeHtml(content); }
+  function renderWindow(message, data, preview) { const anchor = messageElement(message); if (!anchor) return; let host = anchor.querySelector('.stg-theater-host'); if (!host) { host = document.createElement('div'); host.className = 'stg-theater-host'; anchor.appendChild(host); } const current = data && data.current || { title: '小剧场', content: preview || '' }; const favorites = data && Array.isArray(data.favorites) ? data.favorites : []; const favoriteHtml = favorites.length ? '<div class="stg-fav-strip">' + favorites.map(function (item, index) { return '<button type="button" class="stg-fav-chip" data-stg-theater-action="showFavorite" data-stg-favorite-index="' + index + '" title="显示收藏">' + escapeHtml(item.title || ('收藏 ' + (index + 1))) + '</button>'; }).join('') + '</div>' : ''; host.innerHTML = '<section class="stg-theater-window" data-stg-message-key="' + escapeHtml(message.key) + '"><header class="stg-theater-head"><strong class="stg-theater-title">' + icon + '<span>' + escapeHtml(current.title) + '</span></strong><div class="stg-theater-tools"><button type="button" class="stg-icon-btn" data-stg-theater-action="collapse" title="折叠">' + iconFor('collapse') + '</button><button type="button" class="stg-icon-btn" data-stg-theater-action="regenerate" title="重新生成">' + iconFor('refresh') + '</button><button type="button" class="stg-icon-btn" data-stg-theater-action="favorite" title="收藏">' + iconFor('star') + '</button><button type="button" class="stg-icon-btn" data-stg-theater-action="copy" title="复制">' + iconFor('copy') + '</button><button type="button" class="stg-icon-btn" data-stg-theater-action="edit" title="编辑">' + iconFor('edit') + '</button><button type="button" class="stg-icon-btn" data-stg-theater-action="delete" title="删除此条">' + iconFor('trash') + '</button></div></header>' + favoriteHtml + '<div class="stg-theater-body"></div></section>'; renderContent(host.querySelector('.stg-theater-body'), current.content); }
+  function restoreWindows() { const data = chatData(); messages().forEach(function (message, index) { if (!isAssistant(message)) return; const key = messageKey(index, message); if (data.theaters[key] && data.theaters[key].current) renderWindow({ index: index, key: key, text: bodyOf(message).trim() }, data.theaters[key]); }); }
+  function theaterAction(name, el) { const win = el.closest('.stg-theater-window'), key = win && win.dataset.stgMessageKey, data = key && chatData().theaters[key]; if (!data) return; if (name === 'collapse') win.classList.toggle('stg-collapsed'); else if (name === 'regenerate') { const list = messages(); for (let i = 0; i < list.length; i++) if (messageKey(i, list[i]) === key) return generate({ index: i, key: key, text: bodyOf(list[i]).trim() }, 'regenerate'); } else if (name === 'favorite') { data.favorites = data.favorites || []; data.favorites.push(clone(data.current)); saveChat(); renderWindow({ index: messages().findIndex(function (item, index) { return messageKey(index, item) === key; }), key: key }, data); setStatus('已收藏。'); } else if (name === 'showFavorite') { const index = Number(el.dataset.stgFavoriteIndex); if (data.favorites[index]) { const previous = data.current; data.current = data.favorites[index]; renderWindow({ index: messages().findIndex(function (item, itemIndex) { return messageKey(itemIndex, item) === key; }), key: key }, data); data.current = previous; } } else if (name === 'delete') { delete chatData().theaters[key]; saveChat(); win.closest('.stg-theater-host').remove(); } else if (name === 'edit') { const body = win.querySelector('.stg-theater-body'); body.innerHTML = '<textarea class="stg-edit-box">' + escapeHtml(data.current.content) + '</textarea><button class="stg-action stg-primary" data-stg-save-edit>保存编辑</button>'; body.querySelector('[data-stg-save-edit]').addEventListener('click', function () { data.current.content = body.querySelector('textarea').value; saveChat(); restoreWindows(); }); } else if (name === 'copy' && navigator.clipboard) navigator.clipboard.writeText(data.current.content).then(function () { setStatus('已复制。'); }); }
+  async function generate(message, source) { if (generating) return; const profile = currentProfile(), prompts = settings.prompts.filter(function (x) { return x.enabled && String(x.text || '').trim(); }); if (!profile.baseUrl || !profile.apiKey || !profile.model || !prompts.length) return setStatus('请先配置 API 和启用提示词。'); generating = true; const data = chatData(), old = clone(data.theaters[message.key] || { favorites: [] }); renderWindow(message, data.theaters[message.key], '正在生成小剧场...'); try { const result = await request(profile, buildRequest(message)); if (!result) throw new Error('API 返回为空'); data.theaters[message.key] = { current: { title: prompts.length === 1 ? prompts[0].name : '合并小剧场', content: result, source: source, createdAt: Date.now(), sourceHash: hash(message.text) }, favorites: old.favorites || [] }; saveChat(); renderWindow(message, data.theaters[message.key]); setStatus('小剧场生成完成。'); } catch (error) { data.theaters[message.key] = old; renderWindow(message, old); setStatus('生成失败：' + (error.message || '请求异常')); } finally { generating = false; } }
+  function complete(message) { return !!message && !message.is_incomplete && !message.interrupted && !message.error && !/^(error|exception|failed|network error|api error)\b/i.test(bodyOf(message).trim()); }
+  async function maybeAuto() { if (generating || !settings.enabled || !settings.autoGenerate || !chatData().enabled) return; const message = lastAssistant(); if (!message || !complete(message)) return; const signature = message.key + ':' + hash(message.text); if (signature === generatedSignature) return; if (signature !== pendingSignature) { pendingSignature = signature; pendingSince = Date.now(); return; } if (Date.now() - pendingSince < 700) return; generatedSignature = signature; await generate(message, 'auto'); }
+  function subscribe() { if (subscribed) return; subscribed = true; const c = context(), source = c.eventSource || window.eventSource, types = c.event_types || window.event_types || {}, name = types.MESSAGE_RECEIVED || types.GENERATION_ENDED || types.MESSAGE_UPDATED || types.MESSAGE_SENT; if (source && typeof source.on === 'function' && name) { try { source.on(name, function () { setTimeout(maybeAuto, 800); }); } catch (_) {} } setInterval(maybeAuto, 1800); }
+  function setStatus(value) { const el = document.querySelector('#' + ROOT_ID + ' [data-stg-status]'); if (el) el.textContent = value || ''; console.log('[stage-theater]', value || ''); }
+  function init() { if (initialized || !document.body) return; if (!mount()) return; bindEvents(); initialized = true; restoreWindows(); subscribe(); setStatus('已加载。'); }
+  let fired = false;
+  function fire() { if (fired || !document.body) return; try { init(); if (initialized) fired = true; } catch (error) { console.warn('[stage-theater] 初始化失败', error); } }
+  try { const c = context(), source = c.eventSource || window.eventSource, types = c.event_types || window.event_types || {}; if (source && typeof source.on === 'function' && types.APP_READY) source.on(types.APP_READY, fire); } catch (_) {}
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fire, { once: true }); else fire();
+  window.addEventListener('load', fire, { once: true });
+  const started = Date.now(), timer = setInterval(function () { if (document.body) fire(); if (fired || Date.now() - started > 5000) clearInterval(timer); }, 250);
 })();
