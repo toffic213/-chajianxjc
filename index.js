@@ -129,9 +129,11 @@
   function setStatus(value) { const el = document.querySelector('#' + ROOT_ID + ' [data-stg-status]'); if (el) el.textContent = value || ''; console.log('[stage-theater]', value || ''); }
   function init() { if (initialized || !document.body) return; if (!mount()) return; bindEvents(); initialized = true; restoreWindows(); subscribe(); setStatus('已加载。'); }
   let fired = false;
+  const started = Date.now();
   function fire() { if (fired || !document.body) return; try { init(); if (initialized) fired = true; } catch (error) { console.warn('[stage-theater] 初始化失败', error); } }
   try { const c = context(), source = c.eventSource || window.eventSource, types = c.event_types || window.event_types || {}; if (source && typeof source.on === 'function' && types.APP_READY) source.on(types.APP_READY, fire); } catch (_) {}
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fire, { once: true }); else fire();
-  window.addEventListener('load', fire, { once: true });
-  const started = Date.now(), timer = setInterval(function () { if (document.body) fire(); if (fired || Date.now() - started > 5000) clearInterval(timer); }, 250);
+  function fireWhenReady() { if (fired || !document.body) return; const hasTavernContext = !!(window.extension_settings || window.SillyTavern); if (hasTavernContext || Date.now() - started > 3500) fire(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fireWhenReady, { once: true }); else fireWhenReady();
+  window.addEventListener('load', fireWhenReady, { once: true });
+  const timer = setInterval(function () { fireWhenReady(); if (fired || Date.now() - started > 5000) clearInterval(timer); }, 250);
 })();
