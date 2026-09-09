@@ -1,11 +1,10 @@
 {
-  "display_name": "Stage Theater (小剧场)",
+  "display_name": "Stage Theater",
   "name": "stage-theater",
   "id": "stage-theater",
   "version": "1.0.0",
   "type": "extension",
   "js": "index.js",
   "css": "style.css",
-  "author": "User",
-  "description": "AI回复后自动生成小剧场 - 完整版"
+  "author": "stage-theater"
 }
