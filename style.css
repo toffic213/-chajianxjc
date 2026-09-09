@@ -28,11 +28,12 @@
   vertical-align: -0.15em;
 }
 
-.stg-fab {
+.stg-fab,
+#stage-theater-fab {
   position: fixed;
   right: 22px;
   bottom: 22px;
-  z-index: 2147483000;
+  z-index: 2147483647 !important;
   width: 48px;
   height: 48px;
   display: grid;
@@ -45,13 +46,27 @@
   box-shadow: 0 8px 24px #0008;
   cursor: pointer;
   font-size: 23px;
-  opacity: 1;
+  opacity: 1 !important;
   pointer-events: auto;
-  visibility: visible;
+  visibility: visible !important;
+}
+
+.stg-fab svg,
+#stage-theater-fab svg {
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -0.15em;
 }
 
 .stg-fab:hover,
-.stg-fab:focus-visible {
+.stg-fab:focus-visible,
+#stage-theater-fab:hover,
+#stage-theater-fab:focus-visible {
   background: #2b514c;
   outline: 2px solid #f0bd7a;
   outline-offset: 2px;
@@ -503,7 +518,8 @@
 }
 
 @media (max-width: 560px) {
-  .stg-fab {
+  .stg-fab,
+  #stage-theater-fab {
     right: 12px;
     bottom: 12px;
   }

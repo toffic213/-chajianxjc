@@ -3,9 +3,9 @@
 
   const PLUGIN_ID = 'stage-theater';
   const ROOT_ID = 'stg-root';
+  const FAB_ID = 'stage-theater-fab';
   const STORAGE_KEY = 'stage-theater-settings-v1';
   const MESSAGE_KEY = PLUGIN_ID;
-  const BUTTON_NAME = '\u5c0f\u5267\u573a';
   const INSTANCE_KEY = '__stageTheaterInstance';
   const STYLE_LINK_ID = 'stage-theater-style-link';
   const hostWindow = window.parent ?? window;
@@ -64,9 +64,6 @@
   const pending = new Map();
   let eventsSubscribed = false;
   let observer = null;
-  let scriptButtonListener = null;
-  let scriptButtonEnabled = false;
-  let instanceHandle = null;
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -638,14 +635,13 @@
     if (!hostDocument.body) return false;
     if (hostDocument.getElementById(ROOT_ID)) {
       root = hostDocument.getElementById(ROOT_ID);
-      if (scriptButtonEnabled) root.querySelector('.stg-fab')?.remove();
       panel = root.querySelector('.stg-panel');
+      ensureFab();
       return true;
     }
     root = hostDocument.createElement('div');
     root.id = ROOT_ID;
     root.innerHTML = `
-      <button type="button" class="stg-fab" data-stg-action="toggle-panel" title="小剧场设置" aria-label="小剧场设置">${SVG.theater}</button>
       <aside class="stg-panel" hidden>
         <header class="stg-panel-header"><strong>小剧场</strong><button type="button" class="stg-panel-close" data-stg-action="close-panel" title="关闭">${SVG.close}</button></header>
         <div class="stg-panel-status" data-stg-status></div>
@@ -660,13 +656,12 @@
       </aside>
       <input type="file" accept="application/json" data-stg-import hidden>`;
     hostDocument.body.appendChild(root);
-    if (scriptButtonEnabled) root.querySelector('.stg-fab')?.remove();
     panel = root.querySelector('.stg-panel');
     root.addEventListener('click', handleClick);
     root.addEventListener('change', handleChange);
     root.addEventListener('input', handleInput);
     renderTab('general');
-    positionFab();
+    ensureFab();
     return true;
   }
 
@@ -756,7 +751,7 @@
   }
 
   function positionFab() {
-    const fab = root?.querySelector('.stg-fab');
+    const fab = hostDocument.getElementById(FAB_ID);
     if (!fab) return;
     const saved = localStorage.getItem(`${STORAGE_KEY}-fab`);
     if (saved) {
@@ -766,6 +761,41 @@
         fab.style.bottom = `${Math.max(8, Math.min(hostWindow.innerHeight - 56, point.bottom))}px`;
       } catch {}
     }
+  }
+
+  function ensureFab() {
+    if (!hostDocument.body) return null;
+    let fab = hostDocument.getElementById(FAB_ID);
+    if (!fab) {
+      fab = hostDocument.createElement('button');
+      fab.id = FAB_ID;
+      fab.type = 'button';
+      fab.className = 'stg-fab';
+      fab.title = '小剧场设置';
+      fab.setAttribute('aria-label', '小剧场设置');
+      fab.innerHTML = SVG.theater;
+      hostDocument.body.appendChild(fab);
+    }
+
+    fab.style.position = 'fixed';
+    fab.style.right = '22px';
+    fab.style.bottom = '22px';
+    fab.style.zIndex = '2147483647';
+    fab.style.display = 'grid';
+    fab.style.visibility = 'visible';
+    fab.style.opacity = '1';
+    fab.style.pointerEvents = 'auto';
+
+    if (!fab.dataset.stageTheaterBound) {
+      fab.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        togglePanel(true);
+      });
+      fab.dataset.stageTheaterBound = 'true';
+    }
+    positionFab();
+    return fab;
   }
 
   function ensureHostStyles() {
@@ -1054,48 +1084,9 @@
     return true;
   }
 
-  function getScriptHelper(name) {
-    const candidates = [
-      globalThis[name],
-      window[name],
-      hostWindow[name],
-      window.TavernHelper?.[name],
-      hostWindow.TavernHelper?.[name]
-    ];
-    return candidates.find((value) => typeof value === 'function') || null;
-  }
-
-  function setupScriptButton() {
-    if (!instanceHandle && hostWindow[INSTANCE_KEY]?.destroy) {
-      try {
-        hostWindow[INSTANCE_KEY].destroy();
-      } catch (error) {
-        console.warn(`[${PLUGIN_ID}] previous instance cleanup failed`, error);
-      }
-    }
-
-    const appendButton = getScriptHelper('appendInexistentScriptButtons');
-    const getButtonEvent = getScriptHelper('getButtonEvent');
-    const eventOn = getScriptHelper('eventOn');
-    if (!appendButton || !getButtonEvent || !eventOn) return false;
-
-    try {
-      appendButton([{ name: BUTTON_NAME, visible: true }]);
-      scriptButtonListener = eventOn(getButtonEvent(BUTTON_NAME), () => togglePanel(true));
-      scriptButtonEnabled = true;
-      return true;
-    } catch (error) {
-      console.warn(`[${PLUGIN_ID}] script button setup failed`, error);
-      scriptButtonListener?.stop?.();
-      scriptButtonListener = null;
-      return false;
-    }
-  }
-
   function init() {
     if (!hostDocument.body) return false;
     try {
-      scriptButtonEnabled = setupScriptButton();
       ensureHostStyles();
       if (!mountUI()) return false;
       subscribeEvents();
@@ -1117,10 +1108,7 @@
   let initialized = false;
   const fire = () => {
     if (initialized) {
-      if (!scriptButtonEnabled) {
-        scriptButtonEnabled = setupScriptButton();
-        if (scriptButtonEnabled) root?.querySelector('.stg-fab')?.remove();
-      }
+      ensureFab();
       subscribeEvents();
       return;
     }
@@ -1139,25 +1127,32 @@
   const started = Date.now();
   const interval = setInterval(() => {
     if (hostDocument.body) fire();
-    if (initialized && eventsSubscribed && scriptButtonEnabled) {
+    if (initialized && eventsSubscribed && hostDocument.getElementById(FAB_ID)) {
       clearInterval(interval);
     } else if (Date.now() - started > 10000) {
       clearInterval(interval);
     }
   }, 250);
 
+  const previousInstance = hostWindow[INSTANCE_KEY];
+  if (previousInstance?.destroy) {
+    try {
+      previousInstance.destroy();
+    } catch (error) {
+      console.warn(`[${PLUGIN_ID}] previous instance cleanup failed`, error);
+    }
+  }
+
   const instance = {
     destroy: () => {
-      scriptButtonListener?.stop?.();
-      scriptButtonListener = null;
       observer?.disconnect?.();
       observer = null;
       hostDocument.getElementById(ROOT_ID)?.remove();
+      hostDocument.getElementById(FAB_ID)?.remove();
       hostDocument.getElementById(STYLE_LINK_ID)?.remove();
       if (hostWindow[INSTANCE_KEY] === instance) delete hostWindow[INSTANCE_KEY];
     }
   };
-  instanceHandle = instance;
   hostWindow[INSTANCE_KEY] = instance;
   hostWindow.addEventListener('pagehide', () => {
     if (hostWindow[INSTANCE_KEY] === instance) instance.destroy();
