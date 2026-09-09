@@ -7,5 +7,5 @@
   "js": "index.js",
   "css": "style.css",
   "author": "User",
-  "description": "Auto-generate small theater scripts after AI replies using custom API"
+  "description": "AI回复后自动生成小剧场 - 完整版"
 }
