@@ -1,0 +1,11 @@
+{
+  "display_name": "Stage Theater",
+  "name": "stage-theater",
+  "id": "stage-theater",
+  "version": "1.0.0",
+  "type": "extension",
+  "js": "index.js",
+  "css": "style.css",
+  "author": "toffic213",
+  "description": "Auto-generate mini theater scenes after AI replies with independent API"
+}
