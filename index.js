@@ -4,7 +4,7 @@
   const PLUGIN_ID = 'stage-theater';
   const ROOT_ID = 'stg-root';
   const STORAGE_KEY = 'stage_theater_settings_v1';
-  const VERSION = '1.0.0';
+  const VERSION = '1.0.3';
   const icon = {
     masks: '<svg viewBox="0 0 24 24"><path d="M4 8c2-2 5-2 8 0 3-2 6-2 8 0v4c0 4-3 7-8 8-5-1-8-4-8-8V8z"/><path d="M8 12h.01M16 12h.01M9 16c2 1 4 1 6 0"/></svg>',
     close: '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
@@ -51,7 +51,7 @@
       fab.type = 'button';
       fab.title = '小剧场生成器';
       fab.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2-2 5-2 8 0 3-2 6-2 8 0v4c0 4-3 7-8 8-5-1-8-4-8-8V8z"/><path d="M8 12h.01M16 12h.01M9 16c2 1 4 1 6 0"/></svg>';
-      fab.style.cssText = 'position:fixed!important;right:22px!important;bottom:92px!important;width:52px!important;height:52px!important;border:1px solid rgba(27,42,58,.22)!important;border-radius:50%!important;background:#f7fbff!important;color:#17212b!important;box-shadow:0 12px 26px rgba(16,27,39,.25)!important;display:grid!important;place-items:center!important;z-index:2147483647!important;cursor:pointer!important;touch-action:none!important';
+      fab.style.cssText = 'position:fixed!important;right:22px!important;bottom:92px!important;width:56px!important;height:56px!important;border:2px solid #ffffff!important;border-radius:50%!important;background:#126e82!important;color:#ffffff!important;box-shadow:0 12px 26px rgba(16,27,39,.38)!important;display:grid!important;place-items:center!important;z-index:2147483647!important;cursor:pointer!important;touch-action:none!important';
       document.body.appendChild(fab);
       fab.addEventListener('click', function () {
         const root = document.getElementById(ROOT_ID);
@@ -163,7 +163,7 @@
     if (document.getElementById('stg-critical-style')) return;
     const style = document.createElement('style');
     style.id = 'stg-critical-style';
-    style.textContent = '#stg-root{position:relative;z-index:2147483000}#stg-root .stg-fab{position:fixed!important;right:22px;bottom:92px;width:52px;height:52px;border-radius:50%;border:1px solid rgba(27,42,58,.22);background:#f7fbff;color:#17212b;box-shadow:0 12px 26px rgba(16,27,39,.22);display:grid;place-items:center;z-index:2147483001!important;touch-action:none;cursor:pointer}#stg-root .stg-fab svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}#stg-root .stg-panel{position:fixed;right:22px;bottom:150px;width:min(440px,calc(100vw - 24px));max-height:min(720px,calc(100vh - 32px));background:#f8fafc;color:#1d252f;border:1px solid rgba(30,41,59,.18);border-radius:8px;box-shadow:0 20px 60px rgba(15,23,42,.3);overflow:hidden;z-index:2147483000;display:none}#stg-root .stg-panel.stg-open{display:flex;flex-direction:column}';
+    style.textContent = '#stg-root{position:relative;z-index:2147483000}#stg-root .stg-fab{position:fixed!important;right:22px;bottom:92px;width:56px;height:56px;border-radius:50%;border:2px solid #ffffff;background:#126e82;color:#ffffff;box-shadow:0 12px 26px rgba(16,27,39,.38);display:grid;place-items:center;z-index:2147483001!important;touch-action:none;cursor:pointer}#stg-root .stg-fab svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}#stg-root .stg-panel{position:fixed;right:22px;bottom:150px;width:min(440px,calc(100vw - 24px));max-height:min(720px,calc(100vh - 32px));background:#f8fafc;color:#1d252f;border:1px solid rgba(30,41,59,.18);border-radius:8px;box-shadow:0 20px 60px rgba(15,23,42,.3);overflow:hidden;z-index:2147483000;display:none}#stg-root .stg-panel.stg-open{display:flex;flex-direction:column}';
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -215,7 +215,11 @@
     const tact = e.target?.closest?.('[data-stg-theater-action]');
     const root = document.getElementById(ROOT_ID);
     if (tabEl && root?.contains(tabEl)) { e.preventDefault(); e.stopPropagation(); setTab(tabEl.dataset.stgTab); return; }
-    if (act && (root?.contains(act) || act.closest('.stg-theater-window'))) { e.preventDefault(); e.stopPropagation(); action(act.dataset.stgAction, act); return; }
+    if (act && (root?.contains(act) || act.closest('.stg-theater-window'))) {
+      e.preventDefault(); e.stopPropagation();
+      if (act.dataset.stgAction === 'toggle' && Date.now() < suppressFabClickUntil) return;
+      action(act.dataset.stgAction, act); return;
+    }
     if (tact) { e.preventDefault(); e.stopPropagation(); theaterAction(tact.dataset.stgTheaterAction, tact); }
   }
   function onChange(e) {
