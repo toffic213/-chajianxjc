@@ -32,9 +32,11 @@
   position: fixed;
   right: 22px;
   bottom: 22px;
-  z-index: 2000001;
+  z-index: 2147483000;
   width: 48px;
   height: 48px;
+  display: grid;
+  place-items: center;
   padding: 0;
   border: 1px solid #9fd7c3;
   border-radius: 50%;
@@ -43,6 +45,9 @@
   box-shadow: 0 8px 24px #0008;
   cursor: pointer;
   font-size: 23px;
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
 }
 
 .stg-fab:hover,

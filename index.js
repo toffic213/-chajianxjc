@@ -5,6 +5,12 @@
   const ROOT_ID = 'stg-root';
   const STORAGE_KEY = 'stage-theater-settings-v1';
   const MESSAGE_KEY = PLUGIN_ID;
+  const BUTTON_NAME = '\u5c0f\u5267\u573a';
+  const INSTANCE_KEY = '__stageTheaterInstance';
+  const STYLE_LINK_ID = 'stage-theater-style-link';
+  const hostWindow = window.parent ?? window;
+  const hostDocument = hostWindow.document;
+  const scriptUrl = document.currentScript?.src || '';
   const SVG = {
     theater: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4z"/><path d="m8 9 2.5 3L8 15m5-6h3"/></svg>',
     settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19 13.5 1.4 1.1-1.8 3.1-1.7-.7a7.7 7.7 0 0 1-1.8 1l-.2 1.8h-3.6l-.2-1.8a7.7 7.7 0 0 1-1.8-1l-1.7.7-1.8-3.1L7.2 13.5a7.5 7.5 0 0 1 0-2.1L5.8 10.3l1.8-3.1 1.7.7a7.7 7.7 0 0 1 1.8-1l.2-1.8h3.6l.2 1.8a7.7 7.7 0 0 1 1.8 1l1.7-.7 1.8 3.1-1.4 1.1a7.5 7.5 0 0 1 0 2.1Z"/></svg>',
@@ -58,6 +64,9 @@
   const pending = new Map();
   let eventsSubscribed = false;
   let observer = null;
+  let scriptButtonListener = null;
+  let scriptButtonEnabled = false;
+  let instanceHandle = null;
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -525,7 +534,7 @@
   function findMessageElement(messageId) {
     for (const selector of messageSelectors(messageId)) {
       try {
-        const element = document.querySelector(selector);
+        const element = hostDocument.querySelector(selector);
         if (element) return element;
       } catch {
         // Try the next known host selector.
@@ -549,7 +558,7 @@
   }
 
   function frameFor(text) {
-    const iframe = document.createElement('iframe');
+    const iframe = hostDocument.createElement('iframe');
     iframe.className = 'stg-theater-frame';
     iframe.setAttribute('sandbox', 'allow-scripts allow-popups');
     iframe.setAttribute('title', '小剧场内容');
@@ -577,7 +586,7 @@
       old?.remove();
       return;
     }
-    const box = old || document.createElement('section');
+    const box = old || hostDocument.createElement('section');
     box.className = 'stg-message-theater';
     box.dataset.stgMessageId = String(messageId);
     const item = activeRecordItem(record);
@@ -626,13 +635,14 @@
   }
 
   function mountUI() {
-    if (!document.body) return false;
-    if (document.getElementById(ROOT_ID)) {
-      root = document.getElementById(ROOT_ID);
+    if (!hostDocument.body) return false;
+    if (hostDocument.getElementById(ROOT_ID)) {
+      root = hostDocument.getElementById(ROOT_ID);
+      if (scriptButtonEnabled) root.querySelector('.stg-fab')?.remove();
       panel = root.querySelector('.stg-panel');
       return true;
     }
-    root = document.createElement('div');
+    root = hostDocument.createElement('div');
     root.id = ROOT_ID;
     root.innerHTML = `
       <button type="button" class="stg-fab" data-stg-action="toggle-panel" title="小剧场设置" aria-label="小剧场设置">${SVG.theater}</button>
@@ -649,7 +659,8 @@
         <div class="stg-panel-body" data-stg-panel-body></div>
       </aside>
       <input type="file" accept="application/json" data-stg-import hidden>`;
-    document.body.appendChild(root);
+    hostDocument.body.appendChild(root);
+    if (scriptButtonEnabled) root.querySelector('.stg-fab')?.remove();
     panel = root.querySelector('.stg-panel');
     root.addEventListener('click', handleClick);
     root.addEventListener('change', handleChange);
@@ -751,10 +762,21 @@
     if (saved) {
       try {
         const point = JSON.parse(saved);
-        fab.style.right = `${Math.max(8, Math.min(window.innerWidth - 56, point.right))}px`;
-        fab.style.bottom = `${Math.max(8, Math.min(window.innerHeight - 56, point.bottom))}px`;
+        fab.style.right = `${Math.max(8, Math.min(hostWindow.innerWidth - 56, point.right))}px`;
+        fab.style.bottom = `${Math.max(8, Math.min(hostWindow.innerHeight - 56, point.bottom))}px`;
       } catch {}
     }
+  }
+
+  function ensureHostStyles() {
+    if (hostDocument === document || hostDocument.getElementById(STYLE_LINK_ID)) return;
+    const href = new URL('style.css', scriptUrl || document.baseURI).href;
+    const link = hostDocument.createElement('link');
+    link.id = STYLE_LINK_ID;
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.dataset.stageTheater = 'true';
+    hostDocument.head?.appendChild(link);
   }
 
   function togglePanel(show) {
@@ -802,7 +824,7 @@
       try {
         const models = await fetchModels(activeProfile());
         if (!models.length) return setStatus('接口没有返回可用模型。', true);
-        const model = window.prompt(`可用模型：\n${models.join('\n')}\n\n请输入要使用的模型名称`, activeProfile().model || models[0]);
+        const model = hostWindow.prompt(`可用模型：\n${models.join('\n')}\n\n请输入要使用的模型名称`, activeProfile().model || models[0]);
         if (model) {
           activeProfile().model = model.trim();
           await saveSettings();
@@ -836,7 +858,7 @@
     }
     if (action === 'export-prompts') {
       const blob = new Blob([JSON.stringify(settings.prompts, null, 2)], { type: 'application/json' });
-      const link = document.createElement('a');
+      const link = hostDocument.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = 'stage-theater-prompts.json';
       link.click();
@@ -1032,18 +1054,58 @@
     return true;
   }
 
-  function init() {
-    if (!document.body) return false;
+  function getScriptHelper(name) {
+    const candidates = [
+      globalThis[name],
+      window[name],
+      hostWindow[name],
+      window.TavernHelper?.[name],
+      hostWindow.TavernHelper?.[name]
+    ];
+    return candidates.find((value) => typeof value === 'function') || null;
+  }
+
+  function setupScriptButton() {
+    if (!instanceHandle && hostWindow[INSTANCE_KEY]?.destroy) {
+      try {
+        hostWindow[INSTANCE_KEY].destroy();
+      } catch (error) {
+        console.warn(`[${PLUGIN_ID}] previous instance cleanup failed`, error);
+      }
+    }
+
+    const appendButton = getScriptHelper('appendInexistentScriptButtons');
+    const getButtonEvent = getScriptHelper('getButtonEvent');
+    const eventOn = getScriptHelper('eventOn');
+    if (!appendButton || !getButtonEvent || !eventOn) return false;
+
     try {
+      appendButton([{ name: BUTTON_NAME, visible: true }]);
+      scriptButtonListener = eventOn(getButtonEvent(BUTTON_NAME), () => togglePanel(true));
+      scriptButtonEnabled = true;
+      return true;
+    } catch (error) {
+      console.warn(`[${PLUGIN_ID}] script button setup failed`, error);
+      scriptButtonListener?.stop?.();
+      scriptButtonListener = null;
+      return false;
+    }
+  }
+
+  function init() {
+    if (!hostDocument.body) return false;
+    try {
+      scriptButtonEnabled = setupScriptButton();
+      ensureHostStyles();
       if (!mountUI()) return false;
       subscribeEvents();
       renderAllStoredTheaters();
       setTimeout(renderAllStoredTheaters, 700);
-      if (!observer && typeof MutationObserver === 'function') {
-        observer = new MutationObserver(() => {
-          if (document.querySelector('.mes, [mesid], [data-mesid]')) renderAllStoredTheaters();
+      if (!observer && typeof hostWindow.MutationObserver === 'function') {
+        observer = new hostWindow.MutationObserver(() => {
+          if (hostDocument.querySelector('.mes, [mesid], [data-mesid]')) renderAllStoredTheaters();
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(hostDocument.body, { childList: true, subtree: true });
       }
       return true;
     } catch (error) {
@@ -1055,6 +1117,10 @@
   let initialized = false;
   const fire = () => {
     if (initialized) {
+      if (!scriptButtonEnabled) {
+        scriptButtonEnabled = setupScriptButton();
+        if (scriptButtonEnabled) root?.querySelector('.stg-fab')?.remove();
+      }
       subscribeEvents();
       return;
     }
@@ -1069,14 +1135,31 @@
   const initialEvents = getEventSource(initialContext);
   const initialTypes = getEventTypes(initialContext);
   if (initialEvents?.on && initialTypes?.APP_READY) initialEvents.on(initialTypes.APP_READY, fire);
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fire, { once: true });
+  if (hostDocument.readyState === 'loading') hostDocument.addEventListener('DOMContentLoaded', fire, { once: true });
   const started = Date.now();
   const interval = setInterval(() => {
-    if (document.body) fire();
-    if (initialized && eventsSubscribed) {
+    if (hostDocument.body) fire();
+    if (initialized && eventsSubscribed && scriptButtonEnabled) {
       clearInterval(interval);
     } else if (Date.now() - started > 10000) {
       clearInterval(interval);
     }
   }, 250);
+
+  const instance = {
+    destroy: () => {
+      scriptButtonListener?.stop?.();
+      scriptButtonListener = null;
+      observer?.disconnect?.();
+      observer = null;
+      hostDocument.getElementById(ROOT_ID)?.remove();
+      hostDocument.getElementById(STYLE_LINK_ID)?.remove();
+      if (hostWindow[INSTANCE_KEY] === instance) delete hostWindow[INSTANCE_KEY];
+    }
+  };
+  instanceHandle = instance;
+  hostWindow[INSTANCE_KEY] = instance;
+  hostWindow.addEventListener('pagehide', () => {
+    if (hostWindow[INSTANCE_KEY] === instance) instance.destroy();
+  }, { once: true });
 })();
