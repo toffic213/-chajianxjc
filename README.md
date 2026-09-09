@@ -2,6 +2,8 @@
 
 这是一个 SillyTavern 客户端扩展：AI 回复完成后，用插件自己配置的 OpenAI 兼容 API 生成独立的小剧场。它不会调用酒馆的 `ctx.generate`，因此不会自动混入酒馆预设、角色卡或完整上下文。
 
+如果安装后看不到悬浮球，请确认 GitHub 仓库的扩展根目录直接包含 `manifest.json`、`index.js`、`style.css`，而不是多套了一层 `stage-theater/` 文件夹；更新到新版本后卸载旧扩展并彻底重启酒馆。
+
 ## 安装
 
 把 `stage-theater` 整个目录复制到：

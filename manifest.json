@@ -1,0 +1,10 @@
+{
+  "display_name": "小剧场",
+  "loading_order": 10,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Local developer",
+  "version": "0.1.1"
+}
