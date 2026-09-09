@@ -2,7 +2,7 @@
   "display_name": "Stage Theater",
   "name": "stage-theater",
   "id": "stage-theater",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "extension",
   "js": "index.js",
   "css": "style.css",

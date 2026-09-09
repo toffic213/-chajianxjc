@@ -56,6 +56,8 @@
   let statusTimer = null;
   let requestSerial = 0;
   const pending = new Map();
+  let eventsSubscribed = false;
+  let observer = null;
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -624,7 +626,12 @@
   }
 
   function mountUI() {
-    if (document.getElementById(ROOT_ID)) return;
+    if (!document.body) return false;
+    if (document.getElementById(ROOT_ID)) {
+      root = document.getElementById(ROOT_ID);
+      panel = root.querySelector('.stg-panel');
+      return true;
+    }
     root = document.createElement('div');
     root.id = ROOT_ID;
     root.innerHTML = `
@@ -649,6 +656,7 @@
     root.addEventListener('input', handleInput);
     renderTab('general');
     positionFab();
+    return true;
   }
 
   function renderTab(tab) {
@@ -998,15 +1006,17 @@
   }
 
   function subscribeEvents() {
+    if (eventsSubscribed) return true;
     const ctx = getContext();
     const events = getEventSource(ctx);
     const types = getEventTypes(ctx);
-    if (!events?.on || !types) return;
+    if (!events?.on || !types) return false;
     const on = (name, handler) => {
       if (name) {
         try { events.on(name, handler); } catch (error) { console.warn(`[${PLUGIN_ID}] event subscribe failed`, name, error); }
       }
     };
+    on(types.APP_READY, () => fire());
     on(types.MESSAGE_RECEIVED, async (messageId, type) => {
       const allowed = ['normal', 'regenerate', 'swipe', 'first_message'];
       if (!allowed.includes(type) || !getChatAutoEnabled()) return;
@@ -1018,39 +1028,55 @@
       renderAllStoredTheaters();
       renderTab('general');
     }, 200));
+    eventsSubscribed = true;
+    return true;
   }
 
   function init() {
+    if (!document.body) return false;
     try {
-      mountUI();
+      if (!mountUI()) return false;
       subscribeEvents();
       renderAllStoredTheaters();
       setTimeout(renderAllStoredTheaters, 700);
-      const observer = new MutationObserver(() => {
-        if (document.querySelector('.mes, [mesid], [data-mesid]')) renderAllStoredTheaters();
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
+      if (!observer && typeof MutationObserver === 'function') {
+        observer = new MutationObserver(() => {
+          if (document.querySelector('.mes, [mesid], [data-mesid]')) renderAllStoredTheaters();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+      return true;
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] init failed`, error);
+      return false;
     }
   }
 
   let initialized = false;
   const fire = () => {
-    if (initialized) return;
-    initialized = true;
-    try { init(); } catch (error) { console.warn(`[${PLUGIN_ID}] init failed`, error); }
+    if (initialized) {
+      subscribeEvents();
+      return;
+    }
+    try {
+      initialized = init();
+    } catch (error) {
+      console.warn(`[${PLUGIN_ID}] init failed`, error);
+      initialized = false;
+    }
   };
   const initialContext = getContext();
   const initialEvents = getEventSource(initialContext);
   const initialTypes = getEventTypes(initialContext);
   if (initialEvents?.on && initialTypes?.APP_READY) initialEvents.on(initialTypes.APP_READY, fire);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fire, { once: true });
   const started = Date.now();
   const interval = setInterval(() => {
-    const ready = Boolean(window.SillyTavern || window.extension_settings);
-    if (ready || Date.now() - started > 3500) {
+    if (document.body) fire();
+    if (initialized && eventsSubscribed) {
       clearInterval(interval);
-      fire();
+    } else if (Date.now() - started > 10000) {
+      clearInterval(interval);
     }
   }, 250);
 })();
