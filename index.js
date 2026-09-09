@@ -41,6 +41,43 @@
   let suppressFabClickUntil = 0;
   let drag = null;
 
+  emergencyFab();
+
+  function emergencyFab() {
+    function mountEmergency() {
+      if (!document.body || document.getElementById(ROOT_ID) || document.getElementById('stg-emergency-fab')) return;
+      const fab = document.createElement('button');
+      fab.id = 'stg-emergency-fab';
+      fab.type = 'button';
+      fab.title = '小剧场生成器';
+      fab.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c2-2 5-2 8 0 3-2 6-2 8 0v4c0 4-3 7-8 8-5-1-8-4-8-8V8z"/><path d="M8 12h.01M16 12h.01M9 16c2 1 4 1 6 0"/></svg>';
+      fab.style.cssText = 'position:fixed!important;right:22px!important;bottom:92px!important;width:52px!important;height:52px!important;border:1px solid rgba(27,42,58,.22)!important;border-radius:50%!important;background:#f7fbff!important;color:#17212b!important;box-shadow:0 12px 26px rgba(16,27,39,.25)!important;display:grid!important;place-items:center!important;z-index:2147483647!important;cursor:pointer!important;touch-action:none!important';
+      document.body.appendChild(fab);
+      fab.addEventListener('click', function () {
+        const root = document.getElementById(ROOT_ID);
+        if (root) {
+          const panel = root.querySelector('[data-stg-panel]');
+          if (panel) panel.classList.toggle('stg-open');
+        } else {
+          console.warn('[stage-theater] emergency fab is visible, normal mount has not completed');
+        }
+      });
+    }
+    if (document.body) mountEmergency();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountEmergency);
+    window.addEventListener('load', mountEmergency);
+    const timer = setInterval(function () {
+      if (document.getElementById(ROOT_ID)) {
+        const emergency = document.getElementById('stg-emergency-fab');
+        if (emergency && emergency.parentNode) emergency.parentNode.removeChild(emergency);
+        clearInterval(timer);
+        return;
+      }
+      mountEmergency();
+    }, 250);
+    setTimeout(function () { clearInterval(timer); }, 15000);
+  }
+
   function makeId() { return 'stg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8); }
   function ctx() { try { return window.SillyTavern?.getContext?.() || {}; } catch (_) { return {}; } }
   function extSettings() { const c = ctx(); return c.extensionSettings || window.extension_settings || null; }
