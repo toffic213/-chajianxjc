@@ -1,0 +1,11 @@
+{
+  "display_name": "小剧场",
+  "name": "stage-theater",
+  "id": "stage-theater",
+  "version": "0.1.0",
+  "type": "extension",
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Local developer",
+  "description": "在 AI 回复完成后使用独立 API 生成可选小剧场，并提供独立场景库。"
+}
