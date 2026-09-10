@@ -8,13 +8,7 @@
   const MESSAGE_KEY = PLUGIN_ID;
   const INSTANCE_KEY = '__stageTheaterInstance';
   const STYLE_LINK_ID = 'stage-theater-style-link';
-  const hostWindow = (() => {
-    try {
-      return window.parent && window.parent.document ? window.parent : window;
-    } catch {
-      return window;
-    }
-  })();
+  const hostWindow = window.parent ?? window;
   const hostDocument = hostWindow.document;
   const scriptUrl = document.currentScript?.src || '';
   const SVG = {
@@ -70,6 +64,7 @@
   const pending = new Map();
   let eventsSubscribed = false;
   let observer = null;
+  let hostEventsBound = false;
   let fabResizeBound = false;
   let fabResizeHandler = null;
 
@@ -348,7 +343,7 @@
       userMessage ? `【用户上一条消息】\n${userMessage}` : '',
       `【本次 AI 回复】\n${messageText(message)}`,
       `【小剧场提示词】\n${resolvedPrompt}`,
-      '请直接返回最终展示内容，不要解释你的工作过程，不要输出 Markdown 代码围栏。可以使用基础 HTML、内联 CSS 和必要的基础 JavaScript。'
+      '请按以下格式严格返回结果：\n【标题】≤10字的简洁标题\n【内容】\n[小剧场HTML内容]\n\n如生成多个小剧场，用 ===== 分隔：\n【标题】标题1\n【内容】\n内容1\n=====\n【标题】标题2\n【内容】\n内容2'
     ].filter(Boolean).join('\n\n');
     return {
       system: '你是一个专门生成聊天附属小剧场的编剧和前端排版助手。严格依据给定设定，不改写原聊天，不替用户行动。输出可直接放进安全沙盒 iframe 展示的 HTML 内容。',
@@ -424,6 +419,7 @@
   }
 
   async function askProfile(profile, request, onText) {
+    console.log(`[${PLUGIN_ID}] [诊断] askProfile 入口`);
     if (!profile?.baseUrl || !profile?.model) throw new Error('请先填写 API 地址和模型名称。');
     const body = {
       model: profile.model,
@@ -435,20 +431,29 @@
         { role: 'user', content: request.user }
       ]
     };
+    console.log(`[${PLUGIN_ID}] [诊断] askProfile 参数：model=${profile.model}，stream=${profile.stream}，userContent长度=${request.user.length}`);
     let lastError = null;
-    for (const url of endpointCandidates(profile.baseUrl, '/chat/completions')) {
+    const candidates = endpointCandidates(profile.baseUrl, '/chat/completions');
+    console.log(`[${PLUGIN_ID}] [诊断] askProfile 候选URL数=${candidates.length}`);
+    for (const url of candidates) {
       try {
+        console.log(`[${PLUGIN_ID}] [诊断] askProfile 尝试URL: ${url}`);
         const response = await fetchWithTimeout(url, {
           method: 'POST',
           headers: authHeaders(profile),
           body: JSON.stringify(body)
         });
+        console.log(`[${PLUGIN_ID}] [诊断] askProfile 收到响应，status=${response.status}`);
         if (!response.ok) {
           lastError = new Error(`HTTP ${response.status}`);
           continue;
         }
-        return await readCompletionResponse(response, onText, Boolean(profile.stream));
+        console.log(`[${PLUGIN_ID}] [诊断] askProfile 即将读取响应`);
+        const result = await readCompletionResponse(response, onText, Boolean(profile.stream));
+        console.log(`[${PLUGIN_ID}] [诊断] askProfile 响应读取完成，长度=${result.length}`);
+        return result;
       } catch (error) {
+        console.warn(`[${PLUGIN_ID}] [诊断] askProfile 请求异常: ${error.message}`);
         lastError = error;
       }
     }
@@ -473,46 +478,88 @@
     throw lastError || new Error('模型列表请求失败。');
   }
 
-  function newItem(content, promptNames) {
-    return { id: `theater-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, content, promptNames, createdAt: new Date().toISOString(), favorite: false, edited: false };
+  function newItem(content, promptNames, title = '') {
+    return { id: `theater-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, content, promptNames, title, createdAt: new Date().toISOString(), favorite: false, edited: false };
   }
 
   async function generateForMessage(messageId, options = {}) {
+    console.log(`[${PLUGIN_ID}] [诊断] generateForMessage 入口，messageId=${messageId}，当前pending数=${pending.size}`);
     const message = getMessage(messageId);
-    if (!isAssistantMessage(message)) return false;
+    if (!isAssistantMessage(message)) {
+      console.log(`[${PLUGIN_ID}] [诊断] 消息不是AI消息，跳过`);
+      return false;
+    }
     if (!selectedPrompts().length) return setStatus('请先在提示词库中选择至少一条启用提示词。', true);
     const profile = activeProfile();
     if (!profile?.baseUrl || !profile?.apiKey || !profile?.model) return setStatus('请先在 API 设置中填写地址、Key 和模型。', true);
     const serial = ++requestSerial;
     pending.set(Number(messageId), serial);
+    console.log(`[${PLUGIN_ID}] [诊断] 新建请求 serial=${serial}，messageId=${messageId}，pending数=${pending.size}`);
+
+    // 生成开始：关闭悬浮面板，显示"正在生成"
+    togglePanel(false);
     setStatus(options.manual ? '正在手动生成小剧场…' : '正在生成小剧场…');
+
     try {
+      console.log(`[${PLUGIN_ID}] [诊断] 开始 buildRequest`);
       const request = await buildRequest(message, messageId);
+      console.log(`[${PLUGIN_ID}] [诊断] buildRequest 完成，prompts=${request.prompts.length}个`);
       const contents = [];
       if (settings.promptMode === 'separate' && request.prompts.length > 1) {
+        console.log(`[${PLUGIN_ID}] [诊断] 分别请求模式`);
         for (const prompt of request.prompts) {
           const singleRequest = await buildRequest(message, messageId, prompt);
+          console.log(`[${PLUGIN_ID}] [诊断] 单个 prompt="${prompt.name}" 请求前，即将调用 askProfile`);
           contents.push(await askProfile(profile, singleRequest, (partial) => setStatus(`正在生成小剧场… ${partial.length} 字`)));
+          console.log(`[${PLUGIN_ID}] [诊断] 单个 prompt="${prompt.name}" 请求完成`);
         }
       } else {
+        console.log(`[${PLUGIN_ID}] [诊断] 合并请求模式`);
         contents.push(await askProfile(profile, request, (partial) => setStatus(`正在生成小剧场… ${partial.length} 字`)));
+        console.log(`[${PLUGIN_ID}] [诊断] askProfile 完成`);
       }
-      if (pending.get(Number(messageId)) !== serial) return false;
+      if (pending.get(Number(messageId)) !== serial) {
+        console.log(`[${PLUGIN_ID}] [诊断] 请求被替换，当前serial=${pending.get(Number(messageId))}，预期=${serial}，跳过保存`);
+        return false;
+      }
+
+      // 从返回内容中提取单个小剧场（用===== 分隔）
+      const extractTheaters = (fullResponse) => {
+        console.log(`[${PLUGIN_ID}] [日志] AI返回内容长度=${fullResponse.length}，前200字:\n${fullResponse.slice(0, 200)}`);
+        const parts = fullResponse.split(/\s*=====\s*/);
+        console.log(`[${PLUGIN_ID}] [日志] 按=====分隔后得到${parts.length}个部分`);
+        return parts.map((part, idx) => {
+          const titleMatch = part.match(/【标题】\s*(.+?)(?=【内容】|$)/s);
+          const contentMatch = part.match(/【内容】\s*([\s\S]*)/);
+          const title = titleMatch ? titleMatch[1].trim().slice(0, 20) : '小剧场';
+          const content = contentMatch ? contentMatch[1].trim() : part;
+          console.log(`[${PLUGIN_ID}] [日志] 部分${idx}: 标题="${title}", 内容长度=${content.length}`);
+          return { title, content };
+        }).filter((item) => item.content.trim().length > 0);
+      };
+
+      const itemsData = contents.map((response) => extractTheaters(response)).flat();
+      console.log(`[${PLUGIN_ID}] [日志] 最终提取到${itemsData.length}个小剧场`);
+
       const old = getMessageRecord(message) || {};
-      const favorites = [
-        ...(Array.isArray(old.favorites) ? old.favorites : []),
-        ...(Array.isArray(old.items) ? old.items.filter((item) => item.favorite) : [])
-      ].filter((item, index, list) => item?.id && list.findIndex((candidate) => candidate.id === item.id) === index);
+      // 关键：保留旧的favorites，重新生成时不覆盖已收藏的小剧场
+      const favorites = old.favorites && Array.isArray(old.favorites) ? old.favorites : [];
+
+      console.log(`[${PLUGIN_ID}] [日志] 准备创建record: itemsData.length=${itemsData.length}, favorites.length=${favorites.length}`);
+
       const record = {
         version: 1,
-        current: newItem(contents.join('\n\n'), request.prompts.map((prompt) => prompt.name)),
-        items: contents.map((content) => newItem(content, request.prompts.map((prompt) => prompt.name))),
-        favorites,
+        current: itemsData[0] ? newItem(itemsData[0].content, request.prompts.map((prompt) => prompt.name), itemsData[0].title) : null,
+        items: itemsData.map((data) => newItem(data.content, request.prompts.map((prompt) => prompt.name), data.title)),
+        favorites: favorites,
         active: 'current',
         updatedAt: new Date().toISOString()
       };
-      record.items[0] = record.current;
+      if (record.current) record.items[0] = record.current;
+      console.log(`[${PLUGIN_ID}] [日志] record创建完成: items=${record.items.length}, current=${record.current?.title || 'null'}`);
+      console.log(`[${PLUGIN_ID}] [诊断] 即将 saveMessageRecord`);
       await saveMessageRecord(message, record);
+      console.log(`[${PLUGIN_ID}] [诊断] saveMessageRecord 完成，即将 renderMessageTheater`);
       renderMessageTheater(Number(messageId));
       setStatus('小剧场已更新。');
       return true;
@@ -521,7 +568,9 @@
       setStatus(`生成失败：${error.message || error}`, true);
       return false;
     } finally {
+      console.log(`[${PLUGIN_ID}] [诊断] generateForMessage 出口，messageId=${messageId}，即将删除pending`);
       pending.delete(Number(messageId));
+      console.log(`[${PLUGIN_ID}] [诊断] pending 已删除，当前pending数=${pending.size}`);
     }
   }
 
@@ -563,11 +612,31 @@
   }
 
   function frameFor(text) {
+    const frameId = `stg-frame-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const iframe = hostDocument.createElement('iframe');
     iframe.className = 'stg-theater-frame';
     iframe.setAttribute('sandbox', 'allow-scripts allow-popups');
     iframe.setAttribute('title', '小剧场内容');
-    iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent;color:#eef2f5;font:15px/1.7 system-ui,sans-serif;overflow-wrap:anywhere}body{padding:16px}a{color:#8fc9ff}img{max-width:100%;height:auto}pre{white-space:pre-wrap;background:#111923;padding:10px;border-radius:6px}blockquote{margin:0;padding:8px 12px;border-left:3px solid #8fc9ff;background:#ffffff0d}</style></head><body>${safeHtml(text)}</body></html>`;
+    iframe.setAttribute('data-stg-frame-id', frameId);
+
+    iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent;color:#eef2f5;font:15px/1.7 system-ui,sans-serif;overflow-wrap:anywhere}body{padding:16px}a{color:#8fc9ff}img{max-width:100%;height:auto}pre{white-space:pre-wrap;background:#111923;padding:10px;border-radius:6px}blockquote{margin:0;padding:8px 12px;border-left:3px solid #8fc9ff;background:#ffffff0d}</style></head><body>${safeHtml(text)}<script>
+setTimeout(function(){
+  var h=document.body.scrollHeight;
+  window.parent.postMessage({type:'stg-frame-height',frameId:'${frameId}',height:h},'*');
+}, 100);
+</script></body></html>`;
+
+    // 为这个iframe添加唯一的message监听器，一次性使用
+    let heightSet = false;
+    const handleMessage = (e) => {
+      if (!heightSet && e.data?.type === 'stg-frame-height' && e.data?.frameId === frameId && typeof e.data.height === 'number') {
+        heightSet = true;
+        iframe.style.minHeight = Math.max(180, e.data.height + 32) + 'px';
+        hostWindow.removeEventListener('message', handleMessage);
+      }
+    };
+
+    hostWindow.addEventListener('message', handleMessage);
     return iframe;
   }
 
@@ -577,8 +646,18 @@
 
   function activeRecordItem(record) {
     if (!record) return null;
-    if (record.active && record.active !== 'current') return (record.favorites || []).find((item) => item.id === record.active) || record.current;
+    // 如果active指定了某个item的id，从items或favorites中查找
+    if (record.active && record.active !== 'current') {
+      const found = (record.items || []).find((item) => item.id === record.active) ||
+                    (record.favorites || []).find((item) => item.id === record.active);
+      if (found) return found;
+    }
+    // 否则返回current或items[0]
     return record.current || record.items?.[0] || null;
+  }
+
+  function theaterMountPoint(messageElement) {
+    return messageElement.querySelector('.mes_block, .mes_text') || messageElement;
   }
 
   function renderMessageTheater(messageId) {
@@ -586,25 +665,50 @@
     const record = getMessageRecord(message);
     const host = findMessageElement(messageId);
     if (!host) return;
-    const old = host.querySelector(`.stg-message-theater[data-stg-message-id="${messageId}"]`);
+    console.log(`[${PLUGIN_ID}] [日志] renderMessageTheater: messageId=${messageId}, record.items=${record?.items?.length || 0}, record.favorites=${record?.favorites?.length || 0}`);
+    const old = [...host.querySelectorAll('.stg-message-theater')]
+      .find((element) => element.dataset.stgMessageId === String(messageId));
     if (!record?.current && !(record?.favorites || []).length) {
       old?.remove();
       return;
     }
+
     const box = old || hostDocument.createElement('section');
-    box.className = 'stg-message-theater';
+    box.className = 'stg-message-theater stg-theater-window';
+    box.dataset.stgRole = 'message-theater';
     box.dataset.stgMessageId = String(messageId);
     const item = activeRecordItem(record);
+    box.dataset.stgLastItemId = item?.id || '';
+
     const isFavorite = item && item.id !== record.current?.id;
-    const choices = [
-      ...(record.current ? [{ id: 'current', label: '当前小剧场' }] : []),
-      ...(record.favorites || []).map((favorite, index) => ({ id: favorite.id, label: `收藏 ${index + 1}` }))
-    ];
+
+    // 构建下拉菜单：显示所有小剧场版本
+    const choices = [];
+
+    // 添加所有items（包括current）
+    if (record.items && record.items.length > 0) {
+      record.items.forEach((itm, idx) => {
+        const isCurrent = itm.id === record.current?.id;
+        const label = isCurrent ? `当前: ${itm.title || '小剧场'}` : `${itm.title || '小剧场'} (v${idx + 1})`;
+        choices.push({ id: itm.id, label });
+      });
+    }
+
+    // 添加收藏
+    if (record.favorites && record.favorites.length > 0) {
+      record.favorites.forEach((fav, idx) => {
+        choices.push({ id: fav.id, label: `💾 ${fav.title || '收藏'} ${idx + 1}` });
+      });
+    }
+
+    console.log(`[${PLUGIN_ID}] [日志] choices.length=${choices.length}`);
+
+
     box.innerHTML = `
       <header class="stg-theater-header">
         <span class="stg-theater-title">${SVG.theater}<span>小剧场</span></span>
         <div class="stg-theater-tools">
-          ${choices.length > 1 ? `<select class="stg-theater-select" data-stg-field="active-item" aria-label="选择小剧场">${choices.map((choice) => `<option value="${choice.id}" ${record.active === choice.id ? 'selected' : ''}>${choice.label}</option>`).join('')}</select>` : ''}
+          ${choices.length > 0 ? `<select class="stg-theater-select" data-stg-field="active-item" aria-label="选择小剧场">${choices.map((choice) => `<option value="${choice.id}" ${record.active === choice.id ? 'selected' : ''}>${choice.label}</option>`).join('')}</select>` : ''}
           ${button('favorite', isFavorite || item?.favorite ? '取消收藏' : '收藏', SVG.star, item?.favorite || isFavorite ? 'is-active' : '')}
           ${button('edit', '编辑', SVG.edit)}
           ${button('regenerate', '重新生成', SVG.refresh)}
@@ -620,12 +724,11 @@
         </div>
       </div>`;
     const content = box.querySelector('.stg-theater-content');
+    content.innerHTML = '';  // 清空旧内容
     if (item) content.appendChild(frameFor(item.content));
     const editor = box.querySelector('[data-stg-field="edit-content"]');
     if (editor) editor.value = item?.content || '';
-    if (!old) {
-      host.appendChild(box);
-    }
+    if (!old) theaterMountPoint(host).appendChild(box);
     box.querySelector('[data-stg-action="fold"]')?.classList.toggle('is-active', box.classList.contains('is-folded'));
     if (box.classList.contains('is-folded')) box.querySelector('.stg-theater-body').hidden = true;
   }
@@ -660,18 +763,33 @@
           <button type="button" data-stg-tab="prompts">提示词</button>
           <button type="button" data-stg-tab="context">上下文</button>
           <button type="button" data-stg-tab="history">记录</button>
+          <button type="button" data-stg-tab="favorites">收藏库</button>
         </nav>
         <div class="stg-panel-body" data-stg-panel-body></div>
       </aside>
       <input type="file" accept="application/json" data-stg-import hidden>`;
     hostDocument.body.appendChild(root);
     panel = root.querySelector('.stg-panel');
-    root.addEventListener('click', handleClick);
-    root.addEventListener('change', handleChange);
-    root.addEventListener('input', handleInput);
+    bindHostEvents();
     renderTab('general');
     ensureFab();
     return true;
+  }
+
+  function bindHostEvents() {
+    if (hostEventsBound) return;
+    hostDocument.addEventListener('click', handleClick);
+    hostDocument.addEventListener('change', handleChange);
+    hostDocument.addEventListener('input', handleInput);
+    hostEventsBound = true;
+  }
+
+  function unbindHostEvents() {
+    if (!hostEventsBound) return;
+    hostDocument.removeEventListener('click', handleClick);
+    hostDocument.removeEventListener('change', handleChange);
+    hostDocument.removeEventListener('input', handleInput);
+    hostEventsBound = false;
   }
 
   function renderTab(tab) {
@@ -683,6 +801,7 @@
     if (tab === 'prompts') body.innerHTML = promptsTab();
     if (tab === 'context') body.innerHTML = contextTab();
     if (tab === 'history') body.innerHTML = historyTab();
+    if (tab === 'favorites') body.innerHTML = favoritesTab();
   }
 
   function generalTab() {
@@ -730,11 +849,79 @@
     </div>`;
   }
 
+  function favoritesTab() {
+    const allFavorites = [];
+    chatMessages().forEach((message, messageId) => {
+      const record = getMessageRecord(message);
+      if (record?.favorites && Array.isArray(record.favorites)) {
+        record.favorites.forEach((favorite) => {
+          allFavorites.push({
+            messageId,
+            favorite,
+            createdAt: favorite.createdAt,
+            promptNames: favorite.promptNames || [],
+            title: favorite.title || '（无标题）'
+          });
+        });
+      }
+    });
+
+    if (!allFavorites.length) {
+      return `<div class="stg-section"><p class="stg-muted">暂无收藏的小剧场。</p></div>`;
+    }
+
+    const rows = allFavorites.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((item) => {
+      return `<div class="stg-favorite-item" data-stg-favorite-id="${item.favorite.id}" data-stg-message-id="${item.messageId}">
+        <div class="stg-favorite-header">
+          <strong style="flex:1;min-width:0;word-break:break-word">${escapeHtml(item.title)}</strong>
+          <button type="button" data-stg-action="view-favorite" title="查看" style="width:28px;height:28px;padding:0;border:0;background:transparent;color:inherit;cursor:pointer;display:inline-grid;place-items:center">${SVG.play}</button>
+          <button type="button" data-stg-action="remove-favorite" title="删除收藏" style="width:28px;height:28px;padding:0;border:0;background:transparent;color:inherit;cursor:pointer;display:inline-grid;place-items:center">${SVG.trash}</button>
+        </div>
+        <div class="stg-favorite-meta" style="color:var(--stg-muted);font-size:12px;margin-top:4px">
+          <span>${item.promptNames.join(', ') || '（无标签）'}</span>
+          <span style="margin-left:8px">${new Date(item.createdAt).toLocaleString()}</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="stg-section"><div style="display:grid;gap:10px">${rows}</div></div>`;
+  }
+
+  function showFavoriteModal(favoriteId, record) {
+    const favorite = (record.favorites || []).find((fav) => fav.id === favoriteId);
+    if (!favorite) return;
+
+    const modal = hostDocument.createElement('div');
+    modal.id = `stg-modal-${favoriteId}`;
+    modal.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:#00000080;display:grid;place-items:center;z-index:2147483646;padding:20px`;
+
+    const box = hostDocument.createElement('div');
+    box.style.cssText = `background:var(--stg-panel);border:1px solid var(--stg-line);border-radius:8px;width:min(90vw,800px);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px #000b`;
+
+    box.innerHTML = `
+      <header style="display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid var(--stg-line)">
+        <strong>${escapeHtml(favorite.title || '小剧场')}</strong>
+        <button type="button" data-stg-action="close-modal" title="关闭" style="width:30px;height:30px;border:0;background:transparent;color:inherit;cursor:pointer;font-size:20px">${SVG.close}</button>
+      </header>
+      <div style="flex:1;overflow:auto;color:var(--stg-text)"></div>
+    `;
+
+    const content = box.querySelector('div:last-child');
+    const iframe = frameFor(favorite.content);
+    content.appendChild(iframe);
+
+    box.querySelector('[data-stg-action="close-modal"]').addEventListener('click', () => modal.remove());
+    modal.appendChild(box);
+    hostDocument.body.appendChild(modal);
+  }
+
   function historyTab() {
     const list = chatMessages().map((message, id) => ({ message, id })).filter(({ message }) => getMessageRecord(message)).slice(-20).reverse();
     const rows = list.map(({ message, id }) => {
       const record = getMessageRecord(message);
-      return `<button type="button" class="stg-history-row" data-stg-message-id="${id}" data-stg-action="jump-history"><span>#${id}</span><strong>${escapeHtml(messageText(message).slice(0, 48))}</strong><small>${record?.updatedAt ? new Date(record.updatedAt).toLocaleString() : ''}</small></button>`;
+      const item = activeRecordItem(record);
+      const title = item?.title || '（无标题）';
+      return `<button type="button" class="stg-history-row" data-stg-message-id="${id}" data-stg-action="jump-history"><span>#${id}</span><strong>${escapeHtml(title)}</strong><small>${record?.updatedAt ? new Date(record.updatedAt).toLocaleString() : ''}</small></button>`;
     }).join('');
     return `<div class="stg-section"><div class="stg-history-list">${rows || '<p class="stg-muted">暂无生成记录。</p>'}</div></div>`;
   }
@@ -974,6 +1161,93 @@
       else setStatus('当前没有可生成的小剧场的 AI 回复。', true);
       return;
     }
+
+    // 以下操作先尝试从actionElement开始查找theater
+    const theater = actionElement.closest('.stg-message-theater');
+    if (theater) {
+      const messageId = Number(theater.dataset.stgMessageId);
+      const message = getMessage(messageId);
+      const record = getMessageRecord(message);
+      if (!record) return;
+
+      if (action === 'regenerate') {
+        await generateForMessage(messageId, { manual: true });
+        return;
+      }
+      if (action === 'fold') {
+        theater.classList.toggle('is-folded');
+        theater.querySelector('.stg-theater-body').hidden = theater.classList.contains('is-folded');
+        actionElement.classList.toggle('is-active', theater.classList.contains('is-folded'));
+        return;
+      }
+      if (action === 'edit') {
+        theater.querySelector('.stg-theater-content').hidden = true;
+        theater.querySelector('.stg-edit-area').hidden = false;
+        return;
+      }
+      if (action === 'cancel-edit') {
+        renderMessageTheater(messageId);
+        return;
+      }
+      if (action === 'save-edit') {
+        const textarea = theater.querySelector('[data-stg-field="edit-content"]');
+        if (!textarea) return;
+        const text = textarea.value;
+        await updateRecord(messageId, (next) => {
+          const item = activeRecordItem(next);
+          if (!item) return next;
+          item.content = text;
+          item.edited = true;
+          if (item.id === next.current?.id) next.current = item;
+          return next;
+        });
+        return;
+      }
+      if (action === 'favorite') {
+        const oldFavCount = (record.favorites || []).length;
+        await updateRecord(messageId, (next) => {
+          const item = activeRecordItem(next);
+          if (!item) return next;
+          const isCurrent = item.id === next.current?.id;
+
+          if (isCurrent) {
+            const alreadyFavorite = (next.favorites || []).some((fav) => fav.id === item.id);
+            if (alreadyFavorite) {
+              next.favorites = (next.favorites || []).filter((fav) => fav.id !== item.id);
+              if (next.current) next.current.favorite = false;
+            } else {
+              const favoriteItem = { ...item, favorite: true };
+              next.favorites = [...(next.favorites || []), favoriteItem];
+              if (next.current && next.current.id === item.id) next.current.favorite = true;
+            }
+          } else {
+            next.favorites = (next.favorites || []).filter((fav) => fav.id !== item.id);
+          }
+          return next;
+        });
+        const newFavCount = (record.favorites || []).length;
+        setStatus(newFavCount > oldFavCount ? '✓ 已收藏' : '✓ 已取消收藏');
+        return;
+      }
+      if (action === 'delete') {
+        await updateRecord(messageId, (next) => {
+          const item = activeRecordItem(next);
+          if (item && item.id !== next.current?.id) {
+            next.favorites = (next.favorites || []).filter((favorite) => favorite.id !== item.id);
+            next.active = 'current';
+          } else {
+            next.current = null;
+            next.items = [];
+            next.active = 'current';
+          }
+          return next;
+        });
+        return;
+      }
+      return;
+    }
+
+    // 其他操作（不需要theater的）
     if (action === 'new-profile') {
       const profile = { ...DEFAULT_SETTINGS.profiles[0], id: `profile-${Date.now()}`, name: `API ${settings.profiles.length + 1}` };
       settings.profiles.push(profile);
@@ -1041,74 +1315,48 @@
     }
     if (action === 'jump-history') {
       const id = Number(actionElement.dataset.stgMessageId);
-      findMessageElement(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const msg = getMessage(id);
+      const messageElement = findMessageElement(id);
+      const theater = messageElement?.querySelector('.stg-message-theater');
+      if (theater) {
+        theater.classList.remove('is-folded');
+        theater.querySelector('.stg-theater-body').hidden = false;
+        theater.querySelector('[data-stg-action="fold"]')?.classList.remove('is-active');
+        messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (messageElement) {
+        messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       togglePanel(false);
       return;
     }
-    const theater = actionElement.closest('.stg-message-theater');
-    if (!theater) return;
-    const messageId = Number(theater.dataset.stgMessageId);
-    const message = getMessage(messageId);
-    const record = getMessageRecord(message);
-    if (!record) return;
-    if (action === 'regenerate') return generateForMessage(messageId, { manual: true });
-    if (action === 'fold') {
-      theater.classList.toggle('is-folded');
-      theater.querySelector('.stg-theater-body').hidden = theater.classList.contains('is-folded');
-      actionElement.classList.toggle('is-active', theater.classList.contains('is-folded'));
-      return;
-    }
-    if (action === 'edit') {
-      theater.querySelector('.stg-theater-content').hidden = true;
-      theater.querySelector('.stg-edit-area').hidden = false;
-      return;
-    }
-    if (action === 'cancel-edit') {
-      renderMessageTheater(messageId);
-      return;
-    }
-    if (action === 'save-edit') {
-      const text = theater.querySelector('[data-stg-field="edit-content"]').value;
-      await updateRecord(messageId, (next) => {
-        const item = activeRecordItem(next);
-        if (!item) return next;
-        item.content = text;
-        item.edited = true;
-        if (item.id === next.current?.id) next.current = item;
-        return next;
-      });
-      return;
-    }
-    if (action === 'favorite') {
-      await updateRecord(messageId, (next) => {
-        const item = activeRecordItem(next);
-        if (!item) return next;
-        const isCurrent = item.id === next.current?.id;
-        if (isCurrent) {
-          item.favorite = !item.favorite;
-          if (item.favorite) next.favorites = [...(next.favorites || []).filter((favorite) => favorite.id !== item.id), item];
-          else next.favorites = (next.favorites || []).filter((favorite) => favorite.id !== item.id);
-        } else {
-          next.favorites = (next.favorites || []).filter((favorite) => favorite.id !== item.id);
-          item.favorite = false;
+    if (action === 'view-favorite') {
+      const favoriteId = actionElement.closest('[data-stg-favorite-id]')?.dataset.stgFavoriteId;
+      const messageId = Number(actionElement.closest('[data-stg-favorite-id]')?.dataset.stgMessageId);
+      if (messageId !== undefined) {
+        const message = getMessage(messageId);
+        const record = getMessageRecord(message);
+        if (record && favoriteId) {
+          record.active = favoriteId;
+          await saveMessageRecord(message, record);
+          showFavoriteModal(favoriteId, record);
         }
-        return next;
-      });
+      }
       return;
     }
-    if (action === 'delete') {
-      await updateRecord(messageId, (next) => {
-        const item = activeRecordItem(next);
-        if (item && item.id !== next.current?.id) {
-          next.favorites = (next.favorites || []).filter((favorite) => favorite.id !== item.id);
-          next.active = 'current';
-        } else {
-          next.current = null;
-          next.items = [];
-          next.active = 'current';
+    if (action === 'remove-favorite') {
+      const favoriteId = actionElement.closest('[data-stg-favorite-id]')?.dataset.stgFavoriteId;
+      const messageId = Number(actionElement.closest('[data-stg-favorite-id]')?.dataset.stgMessageId);
+      if (messageId !== undefined) {
+        const message = getMessage(messageId);
+        const record = getMessageRecord(message);
+        if (record && favoriteId) {
+          record.favorites = (record.favorites || []).filter((fav) => fav.id !== favoriteId);
+          if (record.active === favoriteId) record.active = 'current';
+          await saveMessageRecord(message, record);
+          renderTab('favorites');
         }
-        return next;
-      });
+      }
+      return;
     }
   }
 
@@ -1198,46 +1446,96 @@
   }
 
   function subscribeEvents() {
-    if (eventsSubscribed) return true;
+    if (eventsSubscribed) {
+      console.log(`[${PLUGIN_ID}] [诊断] subscribeEvents 已绑定过，跳过`);
+      return true;
+    }
     const ctx = getContext();
     const events = getEventSource(ctx);
     const types = getEventTypes(ctx);
-    if (!events?.on || !types) return false;
+    console.log(`[${PLUGIN_ID}] [诊断] subscribeEvents 开始，events=${!!events}，types=${!!types}`);
+    if (!events?.on || !types) {
+      console.log(`[${PLUGIN_ID}] [诊断] subscribeEvents 缺少事件系统，返回false`);
+      return false;
+    }
     const on = (name, handler) => {
       if (name) {
-        try { events.on(name, handler); } catch (error) { console.warn(`[${PLUGIN_ID}] event subscribe failed`, name, error); }
+        try {
+          console.log(`[${PLUGIN_ID}] [诊断] subscribeEvents 绑定事件: ${name}`);
+          events.on(name, handler);
+        } catch (error) {
+          console.warn(`[${PLUGIN_ID}] event subscribe failed`, name, error);
+        }
       }
     };
-    on(types.APP_READY, () => fire());
+    on(types.APP_READY, () => {
+      console.log(`[${PLUGIN_ID}] [诊断] APP_READY 事件触发`);
+      fire();
+    });
     on(types.MESSAGE_RECEIVED, async (messageId, type) => {
+      console.log(`[${PLUGIN_ID}] [诊断] MESSAGE_RECEIVED 触发，messageId=${messageId}，type=${type}`);
       const allowed = ['normal', 'regenerate', 'swipe', 'first_message'];
-      if (!allowed.includes(type) || !getChatAutoEnabled()) return;
+      if (!allowed.includes(type)) {
+        console.log(`[${PLUGIN_ID}] [诊断] type="${type}" 不在允许列表中，跳过`);
+        return;
+      }
+      const autoEnabled = getChatAutoEnabled();
+      console.log(`[${PLUGIN_ID}] [诊断] 自动生成已启用=${autoEnabled}`);
+      if (!autoEnabled) {
+        console.log(`[${PLUGIN_ID}] [诊断] 自动生成被禁用，跳过`);
+        return;
+      }
+      console.log(`[${PLUGIN_ID}] [诊断] 准备调用 generateForMessage(${messageId})`);
       await generateForMessage(Number(messageId));
     });
-    on(types.CHARACTER_MESSAGE_RENDERED, (messageId) => renderMessageTheater(Number(messageId)));
-    on(types.MESSAGE_UPDATED, (messageId) => renderMessageTheater(Number(messageId)));
-    on(types.CHAT_CHANGED, () => setTimeout(() => {
-      renderAllStoredTheaters();
-      renderTab('general');
-    }, 200));
+    on(types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
+      console.log(`[${PLUGIN_ID}] [诊断] CHARACTER_MESSAGE_RENDERED 触发，messageId=${messageId}`);
+      renderMessageTheater(Number(messageId));
+    });
+    on(types.MESSAGE_UPDATED, (messageId) => {
+      console.log(`[${PLUGIN_ID}] [诊断] MESSAGE_UPDATED 触发，messageId=${messageId}`);
+      renderMessageTheater(Number(messageId));
+    });
+    on(types.CHAT_CHANGED, () => {
+      console.log(`[${PLUGIN_ID}] [诊断] CHAT_CHANGED 触发`);
+      setTimeout(() => {
+        renderAllStoredTheaters();
+        // 不要重置tab，保持用户当前的tab选择（比如收藏库）
+      }, 200);
+    });
     eventsSubscribed = true;
+    console.log(`[${PLUGIN_ID}] [诊断] subscribeEvents 完成`);
     return true;
   }
 
   function init() {
-    if (!hostDocument.body) return false;
+    console.log(`[${PLUGIN_ID}] [诊断] init 入口`);
+    if (!hostDocument.body) {
+      console.log(`[${PLUGIN_ID}] [诊断] hostDocument.body 不存在，返回false`);
+      return false;
+    }
     try {
+      console.log(`[${PLUGIN_ID}] [诊断] 调用 ensureHostStyles`);
       ensureHostStyles();
-      if (!mountUI()) return false;
+      console.log(`[${PLUGIN_ID}] [诊断] 调用 mountUI`);
+      if (!mountUI()) {
+        console.log(`[${PLUGIN_ID}] [诊断] mountUI 失败`);
+        return false;
+      }
+      console.log(`[${PLUGIN_ID}] [诊断] 调用 subscribeEvents`);
       subscribeEvents();
+      console.log(`[${PLUGIN_ID}] [诊断] 调用 renderAllStoredTheaters`);
       renderAllStoredTheaters();
       setTimeout(renderAllStoredTheaters, 700);
       if (!observer && typeof hostWindow.MutationObserver === 'function') {
+        console.log(`[${PLUGIN_ID}] [诊断] 创建 MutationObserver`);
         observer = new hostWindow.MutationObserver(() => {
-          if (hostDocument.querySelector('.mes, [mesid], [data-mesid]')) renderAllStoredTheaters();
+          // 仅用于检测聊天区域是否被加载，不主动触发renderAllStoredTheaters
+          // 避免无限循环和闪烁问题
         });
         observer.observe(hostDocument.body, { childList: true, subtree: true });
       }
+      console.log(`[${PLUGIN_ID}] [诊断] init 完成，返回true`);
       return true;
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] init failed`, error);
@@ -1246,6 +1544,7 @@
   }
 
   let initialized = false;
+  let mutationObserverTimer = null;
   const fire = () => {
     if (initialized) {
       ensureFab();
@@ -1285,8 +1584,11 @@
 
   const instance = {
     destroy: () => {
+      clearTimeout(mutationObserverTimer);
+      mutationObserverTimer = null;
       observer?.disconnect?.();
       observer = null;
+      unbindHostEvents();
       if (fabResizeHandler) {
         hostWindow.removeEventListener('resize', fabResizeHandler);
         fabResizeHandler = null;
