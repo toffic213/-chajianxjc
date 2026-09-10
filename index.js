@@ -5,6 +5,9 @@
   const ROOT_ID = 'stg-root';
   const FAB_ID = 'stage-theater-fab';
   const STORAGE_KEY = 'stage-theater-settings-v1';
+  const LOG_STORAGE_KEY = 'stage-theater-logs-v1';
+  const MAX_LOGS = 100;
+  const MAX_LOG_STORAGE_CHARS = 1500000;
   const MESSAGE_KEY = PLUGIN_ID;
   const INSTANCE_KEY = '__stageTheaterInstance';
   const STYLE_LINK_ID = 'stage-theater-style-link';
@@ -78,17 +81,53 @@
   let fabResizeBound = false;
   let fabResizeHandler = null;
   let fabResizeWindow = null;
-  const logs = [];
+  let fabSizeSaveTimer = null;
+  let logRenderTimer = null;
+  const logs = loadLogs();
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
   }
 
-  function addLog(message, level = 'info') {
-    const timestamp = new Date().toLocaleTimeString();
-    const logEntry = { timestamp, level, message };
+  function loadLogs() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(LOG_STORAGE_KEY) || '[]');
+      return Array.isArray(stored) ? stored.filter((entry) => entry && entry.message).slice(-MAX_LOGS) : [];
+    } catch (error) {
+      console.warn(`[${PLUGIN_ID}] logs load failed`, error);
+      return [];
+    }
+  }
+
+  function persistLogs() {
+    try {
+      let serialized = JSON.stringify(logs);
+      while (serialized.length > MAX_LOG_STORAGE_CHARS && logs.length > 1) {
+        logs.shift();
+        serialized = JSON.stringify(logs);
+      }
+      localStorage.setItem(LOG_STORAGE_KEY, serialized);
+    } catch (error) {
+      console.warn(`[${PLUGIN_ID}] logs save failed`, error);
+    }
+  }
+
+  function addLog(message, level = 'info', details = '', detailsLabel = '查看详情') {
+    const normalizedDetails = typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      level,
+      message: String(message || ''),
+      details: normalizedDetails,
+      detailsLabel
+    };
     logs.push(logEntry);
-    if (logs.length > 200) logs.shift();
+    if (logs.length > MAX_LOGS) logs.shift();
+    persistLogs();
+    if (root?.querySelector('[data-stg-tab="logs"].is-active') && panel && !panel.hidden) {
+      clearTimeout(logRenderTimer);
+      logRenderTimer = setTimeout(() => renderTab('logs'), 80);
+    }
   }
 
   function mergeSettings(raw) {
@@ -111,10 +150,7 @@
       order: Number.isFinite(Number(p.order)) ? Number(p.order) : index
     }));
 
-    // 手机端自动调整 FAB 大小
-    if (window.innerWidth <= 560 && next.fabSize === DEFAULT_SETTINGS.fabSize) {
-      next.fabSize = 40;
-    }
+    next.fabSize = Math.max(32, Math.min(120, Number(next.fabSize) || DEFAULT_SETTINGS.fabSize));
 
     return next;
   }
@@ -417,6 +453,18 @@
     };
   }
 
+  function redactUrl(value) {
+    try {
+      const url = new URL(value);
+      for (const key of [...url.searchParams.keys()]) {
+        if (/key|token|secret|auth/i.test(key)) url.searchParams.set(key, '***');
+      }
+      return url.toString();
+    } catch {
+      return String(value || '').replace(/([?&](?:key|token|secret|auth)[^=]*=)[^&]*/gi, '$1***');
+    }
+  }
+
   async function fetchWithTimeout(url, options, timeout = 120000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -484,6 +532,11 @@
     for (const url of candidates) {
       try {
         console.log(`[${PLUGIN_ID}] [诊断] askProfile 尝试URL: ${url}`);
+        addLog(`发送 API 请求 · ${profile.model}`, 'info', {
+          url: redactUrl(url),
+          method: 'POST',
+          body
+        }, '查看实际发送内容');
         const response = await fetchWithTimeout(url, {
           method: 'POST',
           headers: authHeaders(profile),
@@ -492,14 +545,18 @@
         console.log(`[${PLUGIN_ID}] [诊断] askProfile 收到响应，status=${response.status}`);
         if (!response.ok) {
           lastError = new Error(`HTTP ${response.status}`);
+          const errorBody = await response.text().catch(() => '');
+          addLog(`API 请求失败 · HTTP ${response.status}`, 'error', errorBody, '查看返回内容');
           continue;
         }
         console.log(`[${PLUGIN_ID}] [诊断] askProfile 即将读取响应`);
         const result = await readCompletionResponse(response, onText, Boolean(profile.stream));
         console.log(`[${PLUGIN_ID}] [诊断] askProfile 响应读取完成，长度=${result.length}`);
+        addLog(`API 返回成功 · ${result.length} 字`, 'success', result, '查看完整返回内容');
         return result;
       } catch (error) {
         console.warn(`[${PLUGIN_ID}] [诊断] askProfile 请求异常: ${error.message}`);
+        addLog(`API 请求异常 · ${error.message || error}`, 'error', `请求地址：${redactUrl(url)}\n\n${error.stack || error}`, '查看错误详情');
         lastError = error;
       }
     }
@@ -542,9 +599,10 @@
     pending.set(Number(messageId), serial);
     console.log(`[${PLUGIN_ID}] [诊断] 新建请求 serial=${serial}，messageId=${messageId}，pending数=${pending.size}`);
 
-    // 生成开始：关闭悬浮面板，显示"正在生成"
-    togglePanel(false);
-    setStatus(options.manual ? '正在手动生成小剧场…' : '正在生成小剧场…');
+    const startText = options.manual ? '正在重新生成小剧场…' : '正在生成小剧场…';
+    setStatus(startText);
+    setGenerationProgress(messageId, startText, 'loading');
+    addLog(`${options.manual ? '手动' : '自动'}生成开始 · 消息 #${messageId}`, 'info');
 
     try {
       console.log(`[${PLUGIN_ID}] [诊断] 开始 buildRequest`);
@@ -556,12 +614,20 @@
         for (const prompt of request.prompts) {
           const singleRequest = await buildRequest(message, messageId, prompt);
           console.log(`[${PLUGIN_ID}] [诊断] 单个 prompt="${prompt.name}" 请求前，即将调用 askProfile`);
-          contents.push(await askProfile(profile, singleRequest, (partial) => setStatus(`正在生成小剧场… ${partial.length} 字`)));
+          contents.push(await askProfile(profile, singleRequest, (partial) => {
+            const text = `正在生成小剧场… ${partial.length} 字`;
+            setStatus(text);
+            setGenerationProgress(messageId, text, 'loading');
+          }));
           console.log(`[${PLUGIN_ID}] [诊断] 单个 prompt="${prompt.name}" 请求完成`);
         }
       } else {
         console.log(`[${PLUGIN_ID}] [诊断] 合并请求模式`);
-        contents.push(await askProfile(profile, request, (partial) => setStatus(`正在生成小剧场… ${partial.length} 字`)));
+        contents.push(await askProfile(profile, request, (partial) => {
+          const text = `正在生成小剧场… ${partial.length} 字`;
+          setStatus(text);
+          setGenerationProgress(messageId, text, 'loading');
+        }));
         console.log(`[${PLUGIN_ID}] [诊断] askProfile 完成`);
       }
       if (pending.get(Number(messageId)) !== serial) {
@@ -608,14 +674,20 @@
       console.log(`[${PLUGIN_ID}] [诊断] saveMessageRecord 完成，即将 renderMessageTheater`);
       renderMessageTheater(Number(messageId));
       setStatus('小剧场已更新。');
+      setGenerationProgress(messageId, '生成完成', 'success');
+      addLog(`生成完成 · 消息 #${messageId} · ${itemsData.length} 个小剧场`, 'success');
       return true;
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] generation failed`, error);
-      setStatus(`生成失败：${error.message || error}`, true);
+      if (pending.get(Number(messageId)) === serial) {
+        setStatus(`生成失败：${error.message || error}`, true);
+        setGenerationProgress(messageId, `生成失败：${error.message || error}`, 'error');
+      }
+      addLog(`生成失败 · 消息 #${messageId}`, 'error', error.stack || String(error), '查看错误详情');
       return false;
     } finally {
       console.log(`[${PLUGIN_ID}] [诊断] generateForMessage 出口，messageId=${messageId}，即将删除pending`);
-      pending.delete(Number(messageId));
+      if (pending.get(Number(messageId)) === serial) pending.delete(Number(messageId));
       console.log(`[${PLUGIN_ID}] [诊断] pending 已删除，当前pending数=${pending.size}`);
     }
   }
@@ -777,6 +849,7 @@ window.addEventListener('message', function(e){
         </div>
       </header>
       <div class="stg-theater-body">
+        <div class="stg-theater-progress" data-stg-generation-status hidden></div>
         <div class="stg-theater-content"></div>
         <div class="stg-edit-area" hidden>
           <textarea data-stg-field="edit-content"></textarea>
@@ -902,30 +975,34 @@ window.addEventListener('message', function(e){
   function generalTab() {
     const state = getChatState();
     const override = typeof state.autoEnabled === 'boolean' ? String(state.autoEnabled) : 'inherit';
-    return `<div class="stg-section">
-      <label class="stg-switch-row"><span>自动生成</span><input type="checkbox" data-stg-setting="autoEnabled" ${settings.autoEnabled ? 'checked' : ''}><i></i></label>
-      <label class="stg-field"><span>当前聊天</span><select data-stg-chat-toggle><option value="inherit" ${override === 'inherit' ? 'selected' : ''}>跟随全局</option><option value="true" ${override === 'true' ? 'selected' : ''}>启用</option><option value="false" ${override === 'false' ? 'selected' : ''}>关闭</option></select></label>
-      <button type="button" class="stg-command-button" data-stg-action="generate-current">${SVG.play}<span>手动生成当前 AI 回复</span></button>
-      <p class="stg-muted">自动结果会显示在对应 AI 消息下方，悬浮球仅打开设置。</p>
-
-      <hr style="margin:12px 0;border:none;border-top:1px solid var(--stg-line)">
-      <strong style="color:var(--stg-text);display:block;margin-bottom:8px">🐾 桌宠悬浮球</strong>
-
-      <label class="stg-field"><span>悬浮球大小 (px)</span><input type="number" min="32" max="120" step="4" data-stg-setting="fabSize" value="${settings.fabSize}"></label>
-
-      <label class="stg-field"><span>形状</span><select data-stg-setting="fabShape">
-        <option value="circle" ${settings.fabShape === 'circle' ? 'selected' : ''}>圆形</option>
-        <option value="square" ${settings.fabShape === 'square' ? 'selected' : ''}>方形</option>
-        <option value="none" ${settings.fabShape === 'none' ? 'selected' : ''}>不规则 (无圆角)</option>
-      </select></label>
-
-      <label class="stg-field"><span>自定义图片</span></label>
-      <div class="stg-inline-actions">
-        ${settings.fabImage ? `<button type="button" class="stg-small-action" data-stg-action="preview-fab-image" title="预览">${SVG.play}</button>` : ''}
-        <button type="button" class="stg-small-action" data-stg-action="upload-fab-image" title="上传图片">${SVG.upload}</button>
-        ${settings.fabImage ? `<button type="button" class="stg-small-action" data-stg-action="remove-fab-image" title="删除图片">${SVG.trash}</button>` : ''}
+    return `<div class="stg-section stg-settings-page">
+      <div class="stg-settings-card">
+        <div class="stg-settings-card-title">生成设置</div>
+        <label class="stg-switch-row"><span>全局自动生成</span><input type="checkbox" data-stg-setting="autoEnabled" ${settings.autoEnabled ? 'checked' : ''}><i></i></label>
+        <label class="stg-field"><span>当前聊天</span><select data-stg-chat-toggle><option value="inherit" ${override === 'inherit' ? 'selected' : ''}>跟随全局</option><option value="true" ${override === 'true' ? 'selected' : ''}>单独启用</option><option value="false" ${override === 'false' ? 'selected' : ''}>单独关闭</option></select></label>
+        <button type="button" class="stg-command-button" data-stg-action="generate-current">${SVG.play}<span>手动生成当前 AI 回复</span></button>
+        <p class="stg-muted">结果显示在对应 AI 消息下方。</p>
       </div>
-      <p class="stg-muted">${settings.fabImage ? '✓ 已上传图片' : '支持 PNG/JPG，建议透明背景'}</p>
+
+      <div class="stg-settings-card">
+        <div class="stg-settings-card-title">悬浮球外观</div>
+        <label class="stg-field"><span>大小 <output data-stg-fab-size-output>${settings.fabSize}px</output></span>
+          <div class="stg-size-control"><input type="range" min="32" max="120" step="4" data-stg-setting="fabSize" value="${settings.fabSize}"><input type="number" min="32" max="120" step="4" data-stg-setting="fabSize" value="${settings.fabSize}" aria-label="悬浮球大小"></div>
+        </label>
+        <label class="stg-field"><span>形状</span><select data-stg-setting="fabShape">
+          <option value="circle" ${settings.fabShape === 'circle' ? 'selected' : ''}>圆形</option>
+          <option value="square" ${settings.fabShape === 'square' ? 'selected' : ''}>圆角方形</option>
+          <option value="none" ${settings.fabShape === 'none' ? 'selected' : ''}>直角方形</option>
+        </select></label>
+        <div class="stg-field"><span>自定义图片</span>
+          <div class="stg-inline-actions">
+            ${settings.fabImage ? `<button type="button" class="stg-small-action" data-stg-action="preview-fab-image" title="预览">预览</button>` : ''}
+            <button type="button" class="stg-small-action" data-stg-action="upload-fab-image" title="上传图片">选择图片</button>
+            ${settings.fabImage ? `<button type="button" class="stg-small-action" data-stg-action="remove-fab-image" title="删除图片">移除图片</button>` : ''}
+          </div>
+        </div>
+        <p class="stg-muted">${settings.fabImage ? '已使用自定义图片' : '支持 PNG、JPG、WebP，建议使用透明背景。'}</p>
+      </div>
     </div>`;
   }
 
@@ -1041,16 +1118,26 @@ window.addEventListener('message', function(e){
   }
 
   function contextTab() {
-    return `<div class="stg-section">
-      <label class="stg-field"><span>上下文深度</span><input type="number" min="0" step="1" data-stg-setting="contextDepth" value="${Number(settings.contextDepth) || 0}"></label>
-      <label class="stg-field"><span>多提示词模式</span><select data-stg-setting="promptMode"><option value="merged" ${settings.promptMode === 'merged' ? 'selected' : ''}>合并请求</option><option value="separate" ${settings.promptMode === 'separate' ? 'selected' : ''}>分别请求</option></select></label>
-      <label class="stg-switch-row"><span>发送已启用世界书条目</span><input type="checkbox" data-stg-setting="sendWorldbook" ${settings.sendWorldbook ? 'checked' : ''}><i></i></label>
-      <div id="stg-worldbooks-section" style="display:${settings.sendWorldbook ? 'block' : 'none'};margin-top:12px;padding:12px;background:#0d1620;border:1px solid var(--stg-line);border-radius:6px">
-        <div style="font-size:12px;color:var(--stg-muted);margin-bottom:8px">选择要发送的世界书（不勾选则发送全部）</div>
-        <div id="stg-worldbooks-list" style="display:grid;gap:8px"></div>
+    return `<div class="stg-section stg-settings-page">
+      <div class="stg-settings-card">
+        <div class="stg-settings-card-title">聊天上下文</div>
+        <label class="stg-field"><span>上下文深度</span><input type="number" min="0" step="1" data-stg-setting="contextDepth" value="${Number(settings.contextDepth) || 0}"></label>
+        <label class="stg-field"><span>多提示词模式</span><select data-stg-setting="promptMode"><option value="merged" ${settings.promptMode === 'merged' ? 'selected' : ''}>合并为一次请求</option><option value="separate" ${settings.promptMode === 'separate' ? 'selected' : ''}>分别发送请求</option></select></label>
+        <label class="stg-switch-row"><span>发送用户上一条消息</span><input type="checkbox" data-stg-setting="sendPreviousUser" ${settings.sendPreviousUser ? 'checked' : ''}><i></i></label>
+        <p class="stg-muted">角色卡设定始终发送；深度为 0 时仅发送当前 AI 回复。</p>
       </div>
-      <label class="stg-switch-row"><span>发送用户上一条消息</span><input type="checkbox" data-stg-setting="sendPreviousUser" ${settings.sendPreviousUser ? 'checked' : ''}><i></i></label>
-      <p class="stg-muted">角色卡设定始终发送。深度为 0 时不发送聊天上下文，但仍发送当前 AI 回复。</p>
+      <div class="stg-settings-card">
+        <div class="stg-settings-card-title">世界书</div>
+        <label class="stg-switch-row"><span>发送已启用的世界书条目</span><input type="checkbox" data-stg-setting="sendWorldbook" ${settings.sendWorldbook ? 'checked' : ''}><i></i></label>
+        <div id="stg-worldbooks-section" class="stg-worldbooks-section" ${settings.sendWorldbook ? '' : 'hidden'}>
+          <div class="stg-worldbook-toolbar">
+            <span data-stg-worldbook-summary>正在读取世界书…</span>
+            <button type="button" class="stg-small-action" data-stg-action="all-worldbooks">发送全部</button>
+          </div>
+          <p class="stg-muted">勾选后只发送选中的世界书；不勾选时发送全部可用世界书。</p>
+          <div id="stg-worldbooks-list" class="stg-worldbooks-list"></div>
+        </div>
+      </div>
     </div>`;
   }
 
@@ -1082,30 +1169,40 @@ window.addEventListener('message', function(e){
     const list = hostDocument.getElementById('stg-worldbooks-list');
     if (!list) return;
     const selectedNames = settings.selectedWorldbooks || [];
+    const summary = hostDocument.querySelector('[data-stg-worldbook-summary]');
     if (names.size === 0) {
       list.innerHTML = '<p class="stg-muted" style="font-size:12px">未检测到世界书</p>';
+      if (summary) summary.textContent = '未检测到世界书';
       return;
     }
+    if (summary) summary.textContent = selectedNames.length ? `已选 ${selectedNames.length} / ${names.size}` : `发送全部 ${names.size} 本`;
     list.innerHTML = Array.from(names).map(name => `
-      <label class="stg-check" style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--stg-text)">
-        <input type="checkbox" value="${escapeAttr(name)}" data-stg-worldbook-name ${selectedNames.includes(name) ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer">
-        <span style="font-size:12px">${escapeHtml(name)}</span>
+      <label class="stg-worldbook-option">
+        <input type="checkbox" value="${escapeAttr(name)}" data-stg-worldbook-name ${selectedNames.includes(name) ? 'checked' : ''}>
+        <span class="stg-worldbook-check" aria-hidden="true"></span>
+        <span class="stg-worldbook-name">${escapeHtml(name)}</span>
       </label>
     `).join('');
   }
 
   function logsTab() {
     const logItems = logs.slice(-50).reverse().map((log) => {
-      const color = log.level === 'error' ? '#f49c91' : log.level === 'warn' ? '#f0bd7a' : '#86c8b2';
-      return `<div style="padding:8px 10px;border-bottom:1px solid #1a2835;font-family:monospace;font-size:12px;color:${color};line-height:1.5"><span style="color:#7a8a93">[${log.timestamp}]</span> ${escapeHtml(log.message)}</div>`;
+      const date = new Date(log.timestamp);
+      const timestamp = Number.isNaN(date.getTime()) ? log.timestamp : date.toLocaleString();
+      const levelLabel = log.level === 'error' ? '错误' : log.level === 'warn' ? '警告' : log.level === 'success' ? '成功' : '信息';
+      return `<article class="stg-log-item is-${escapeAttr(log.level || 'info')}">
+        <div class="stg-log-summary"><time>${escapeHtml(timestamp)}</time><span>${levelLabel}</span><strong>${escapeHtml(log.message)}</strong></div>
+        ${log.details ? `<details><summary>${escapeHtml(log.detailsLabel || '查看详情')}</summary><pre>${escapeHtml(log.details)}</pre></details>` : ''}
+      </article>`;
     }).join('');
-    return `<div class="stg-section" style="padding:0;display:flex;flex-direction:column;height:100%">
-      <div style="display:flex;gap:6px;padding:12px;border-bottom:1px solid var(--stg-line);flex-shrink:0">
+    return `<div class="stg-logs">
+      <div class="stg-log-toolbar">
+        <span>保留最近 ${MAX_LOGS} 条，刷新页面也不会丢失</span>
         <button type="button" class="stg-small-action" data-stg-action="clear-logs" title="清空日志">清空</button>
         <button type="button" class="stg-small-action" data-stg-action="export-logs" title="导出日志">导出</button>
       </div>
-      <div style="flex:1;overflow-y:auto;background:#0a0f14">
-        ${logItems || '<div style="padding:20px;text-align:center;color:var(--stg-muted);font-size:12px">暂无日志</div>'}
+      <div class="stg-log-list">
+        ${logItems || '<div class="stg-log-empty">暂无日志。生成一次小剧场后，这里会记录实际发送内容、接口状态和完整返回内容。</div>'}
       </div>
     </div>`;
   }
@@ -1152,44 +1249,48 @@ window.addEventListener('message', function(e){
     const favorite = (record.favorites || []).find((fav) => fav.id === favoriteId);
     if (!favorite) return;
 
+    hostDocument.querySelector('.stg-modal')?.remove();
     const modal = hostDocument.createElement('div');
     modal.id = `stg-modal-${favoriteId}`;
-    modal.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:grid;place-items:center;z-index:2147483646;padding:20px;backdrop-filter:blur(4px);overflow-y:auto`;
+    modal.className = 'stg-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', favorite.title || '收藏的小剧场');
+    modal.tabIndex = -1;
 
     const box = hostDocument.createElement('div');
-    box.style.cssText = `background:var(--stg-panel);border:1px solid var(--stg-line);border-radius:8px;width:min(90vw,800px);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.6);margin:auto`;
+    box.className = 'stg-modal-dialog';
 
     box.innerHTML = `
-      <header style="display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid var(--stg-line);background:var(--stg-panel-2)">
-        <strong style="color:var(--stg-text)">${escapeHtml(favorite.title || '小剧场')}</strong>
-        <button type="button" data-stg-action="close-modal" title="关闭（ESC）" style="padding:6px 10px;border:1px solid var(--stg-line);background:transparent;color:var(--stg-text);cursor:pointer;font-size:12px;border-radius:4px">关闭</button>
+      <header class="stg-modal-header">
+        <strong>${escapeHtml(favorite.title || '小剧场')}</strong>
+        <button type="button" class="stg-panel-close" data-stg-action="close-modal" title="关闭（Esc）" aria-label="关闭">${SVG.close}</button>
       </header>
-      <div style="flex:1;overflow:auto;color:var(--stg-text);background:#10191e"></div>
+      <div class="stg-modal-content"></div>
     `;
 
-    const content = box.querySelector('div:last-child');
+    const content = box.querySelector('.stg-modal-content');
     const iframe = frameFor(favorite.content);
     content.appendChild(iframe);
 
-    const closeModal = () => modal.remove();
+    const closeModal = () => {
+      hostDocument.removeEventListener('keydown', escListener);
+      modal.remove();
+    };
     box.querySelector('[data-stg-action="close-modal"]').addEventListener('click', closeModal);
 
-    // 点击外面关闭
-    modal.addEventListener('click', (e) => {
+    modal.addEventListener('pointerdown', (e) => {
       if (e.target === modal) closeModal();
     });
 
-    // ESC 键关闭
     const escListener = (e) => {
-      if (e.key === 'Escape') {
-        closeModal();
-        hostDocument.removeEventListener('keydown', escListener);
-      }
+      if (e.key === 'Escape') closeModal();
     };
     hostDocument.addEventListener('keydown', escListener);
 
     modal.appendChild(box);
-    hostDocument.body.appendChild(modal);
+    (root || hostDocument.body).appendChild(modal);
+    modal.focus({ preventScroll: true });
   }
 
   function historyTab() {
@@ -1213,14 +1314,82 @@ window.addEventListener('message', function(e){
 
   function setStatus(text, error = false) {
     const target = root?.querySelector('[data-stg-status]');
+    const fab = root?.querySelector(`#${FAB_ID}`);
     if (target) {
       target.textContent = text;
       target.classList.toggle('is-error', error);
     }
+    if (fab && text) {
+      fab.dataset.stgNotice = text;
+      fab.classList.toggle('is-notice-error', error);
+    }
     clearTimeout(statusTimer);
     statusTimer = setTimeout(() => {
       if (target && !target.classList.contains('is-error')) target.textContent = '';
+      if (fab && !pending.size && fab.dataset.stgState !== 'error') {
+        delete fab.dataset.stgNotice;
+        fab.classList.remove('is-notice-error');
+      }
     }, 5000);
+  }
+
+  function setGenerationProgress(messageId, text, state = 'loading') {
+    const fab = root?.querySelector(`#${FAB_ID}`);
+    if (fab) {
+      fab.dataset.stgNotice = text;
+      fab.dataset.stgState = state;
+      fab.classList.toggle('is-generating', state === 'loading');
+      fab.classList.toggle('is-notice-error', state === 'error');
+      fab.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+    }
+
+    const theater = findMessageElement(messageId)?.querySelector(`.stg-message-theater[data-stg-message-id="${CSS.escape(String(messageId))}"]`);
+    if (theater) {
+      let progress = theater.querySelector('[data-stg-generation-status]');
+      if (!progress) {
+        progress = hostDocument.createElement('div');
+        progress.className = 'stg-theater-progress';
+        progress.dataset.stgGenerationStatus = '';
+        theater.querySelector('.stg-theater-body')?.prepend(progress);
+      }
+      progress.hidden = false;
+      progress.textContent = text;
+      progress.dataset.state = state;
+      theater.classList.toggle('is-generating', state === 'loading');
+      theater.querySelector('[data-stg-action="regenerate"]')?.toggleAttribute('disabled', state === 'loading');
+    }
+
+    if (state !== 'loading') {
+      const delay = state === 'error' ? 7000 : 3000;
+      setTimeout(() => {
+        const currentFab = root?.querySelector(`#${FAB_ID}`);
+        if (currentFab?.dataset.stgNotice === text && !pending.size) {
+          delete currentFab.dataset.stgNotice;
+          delete currentFab.dataset.stgState;
+          currentFab.classList.remove('is-generating', 'is-notice-error');
+        }
+        const currentTheater = findMessageElement(messageId)?.querySelector(`.stg-message-theater[data-stg-message-id="${CSS.escape(String(messageId))}"]`);
+        const currentProgress = currentTheater?.querySelector('[data-stg-generation-status]');
+        if (currentProgress?.textContent === text) {
+          currentProgress.hidden = true;
+          currentTheater.classList.remove('is-generating');
+          currentTheater.querySelector('[data-stg-action="regenerate"]')?.removeAttribute('disabled');
+        }
+      }, delay);
+    }
+  }
+
+  function applyFabSize(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return false;
+    settings.fabSize = Math.max(32, Math.min(120, numeric));
+    root?.querySelectorAll('[data-stg-setting="fabSize"]').forEach((input) => {
+      if (Number(input.value) !== settings.fabSize) input.value = String(settings.fabSize);
+    });
+    const output = root?.querySelector('[data-stg-fab-size-output]');
+    if (output) output.textContent = `${settings.fabSize}px`;
+    ensureFab();
+    return true;
   }
 
   function positionFab() {
@@ -1274,24 +1443,24 @@ window.addEventListener('message', function(e){
   }
 
   function positionPanel() {
-    const fab = root?.querySelector(`#${FAB_ID}`);
-    if (!fab || !panel || panel.hidden) return;
+    if (!panel || panel.hidden) return;
     const viewport = panel.ownerDocument?.defaultView || hostWindow;
-    const fabRect = fab.getBoundingClientRect();
+    const visualViewport = viewport.visualViewport;
+    const viewportWidth = visualViewport?.width || viewport.innerWidth;
+    const viewportHeight = visualViewport?.height || viewport.innerHeight;
+    const offsetLeft = visualViewport?.offsetLeft || 0;
+    const offsetTop = visualViewport?.offsetTop || 0;
     const panelWidth = panel.offsetWidth;
     const panelHeight = panel.offsetHeight;
     if (!panelWidth || !panelHeight) return;
-    const margin = 8;
-    const gap = 12;
-    const maxLeft = Math.max(margin, viewport.innerWidth - panelWidth - margin);
-    const left = Math.min(maxLeft, Math.max(margin, fabRect.right - panelWidth));
-    let top = fabRect.top - panelHeight - gap;
-    if (top < margin) top = fabRect.bottom + gap;
-    top = Math.min(Math.max(margin, top), Math.max(margin, viewport.innerHeight - panelHeight - margin));
+    const margin = 12;
+    const left = offsetLeft + Math.max(margin, (viewportWidth - panelWidth) / 2);
+    const top = offsetTop + Math.max(margin, (viewportHeight - panelHeight) / 2);
     panel.style.left = `${Math.round(left)}px`;
     panel.style.top = `${Math.round(top)}px`;
     panel.style.right = 'auto';
     panel.style.bottom = 'auto';
+    panel.style.transform = 'none';
   }
 
   function ensureFab() {
@@ -1353,9 +1522,11 @@ window.addEventListener('message', function(e){
 
       // 应用FAB自定义设置
     const fabSize = Math.max(32, Math.min(120, Number(settings.fabSize) || 48));
-    fab.style.width = `${fabSize}px`;
-    fab.style.height = `${fabSize}px`;
-    fab.style.fontSize = `${Math.round(fabSize * 0.48)}px`;
+    fab.style.setProperty('width', `${fabSize}px`, 'important');
+    fab.style.setProperty('height', `${fabSize}px`, 'important');
+    fab.style.setProperty('min-width', `${fabSize}px`, 'important');
+    fab.style.setProperty('min-height', `${fabSize}px`, 'important');
+    fab.style.setProperty('font-size', `${Math.round(fabSize * 0.48)}px`, 'important');
 
     // 应用形状和背景
     fab.innerHTML = '';  // 先清空
@@ -1558,6 +1729,13 @@ window.addEventListener('message', function(e){
       const last = findLastAssistant();
       if (last) await generateForMessage(last.id, { manual: true });
       else setStatus('当前没有可生成的小剧场的 AI 回复。', true);
+      return;
+    }
+    if (action === 'all-worldbooks') {
+      settings.selectedWorldbooks = [];
+      await saveSettings();
+      await updateWorldbookList();
+      setStatus('已设为发送全部世界书。');
       return;
     }
     if (action === 'upload-fab-image') {
@@ -1914,12 +2092,13 @@ window.addEventListener('message', function(e){
     }
     if (action === 'clear-logs') {
       logs.length = 0;
+      try { localStorage.removeItem(LOG_STORAGE_KEY); } catch {}
       renderTab('logs');
       setStatus('✓ 已清空日志');
       return;
     }
     if (action === 'export-logs') {
-      const text = logs.map(log => `${log.timestamp} [${log.level.toUpperCase()}] ${log.message}`).join('\n');
+      const text = logs.map(log => `${log.timestamp} [${log.level.toUpperCase()}] ${log.message}${log.details ? `\n${log.details}` : ''}`).join('\n\n${'-'.repeat(72)}\n\n');
       const blob = new Blob([text], { type: 'text/plain' });
       const link = hostDocument.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -1936,6 +2115,9 @@ window.addEventListener('message', function(e){
       const selected = Array.from(hostDocument.querySelectorAll('[data-stg-worldbook-name]:checked')).map(el => el.value);
       settings.selectedWorldbooks = selected;
       await saveSettings();
+      const total = hostDocument.querySelectorAll('[data-stg-worldbook-name]').length;
+      const summary = hostDocument.querySelector('[data-stg-worldbook-summary]');
+      if (summary) summary.textContent = selected.length ? `已选 ${selected.length} / ${total}` : `发送全部 ${total} 本`;
       return;
     }
     if (target.id === 'stg-random-enabled') {
@@ -2010,6 +2192,13 @@ window.addEventListener('message', function(e){
     }
     if (target.matches('[data-stg-setting]')) {
       const key = target.dataset.stgSetting;
+      if (key === 'fabSize') {
+        if (!applyFabSize(target.value)) return;
+        clearTimeout(fabSizeSaveTimer);
+        await saveSettings();
+        addLog(`悬浮球大小已保存 · ${settings.fabSize}px`, 'info');
+        return;
+      }
       if (target.tagName === 'TEXTAREA') {
         settings[key] = target.value;
       } else {
@@ -2024,12 +2213,9 @@ window.addEventListener('message', function(e){
       if (key === 'sendWorldbook') {
         const section = hostDocument.getElementById('stg-worldbooks-section');
         if (section) {
-          section.style.display = settings.sendWorldbook ? 'block' : 'none';
+          section.hidden = !settings.sendWorldbook;
           if (settings.sendWorldbook) updateWorldbookList();
         }
-      }
-      if (key === 'fabSize') {
-        addLog(`调整悬浮球大小: ${settings.fabSize}px`, 'info');
       }
       return;
     }
@@ -2062,6 +2248,12 @@ window.addEventListener('message', function(e){
 
   function handleInput(event) {
     const target = event.target;
+    if (target.matches('[data-stg-setting="fabSize"]')) {
+      if (!applyFabSize(target.value)) return;
+      clearTimeout(fabSizeSaveTimer);
+      fabSizeSaveTimer = setTimeout(() => saveSettings(), 250);
+      return;
+    }
     if (target.matches('[data-stg-setting="systemPrompt"]')) {
       settings.systemPrompt = target.value;
       saveSettings();
