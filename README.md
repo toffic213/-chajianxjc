@@ -32,7 +32,7 @@ data/<用户名>/extensions/stage-theater/
 
 ## 生图插件桥接
 
-小剧场支持在正文任意位置放置多个 `image###提示词###` 标记。插件会将标记提取到外层 DOM，并把对应位置转换为图片占位槽。生图插件可监听 `stage-theater:image-prompts` 事件获取 `event.detail.prompts`，也可调用 `window.stageTheaterImageBridge.getImagePrompts()` 主动读取。生成完成后调用 `window.stageTheaterImageBridge.insertImage(完整标记或提示词或slotId, 图片URL或HTML)`；图片会回填原位置并随小剧场记录保存。批量回填可调用 `insertImages([{ token, url }])`。
+小剧场支持在正文任意位置放置多个 `image###提示词###` 标记。标记只在小剧场自己的 iframe 正文中转换为图片占位槽，不会复制到真实聊天消息，也不会触发聊天消息的加载状态。生图插件可监听一次 `stage-theater:image-prompts` 事件获取 `event.detail.prompts`，每项可直接调用 `prompt.resolve(图片URL或HTML)`；也可调用 `event.detail.resolve(slotId或完整标记或提示词, 图片URL或HTML)`。主动读取可使用 `window.stageTheaterImageBridge.getPendingImagePrompts()`，回填使用 `window.stageTheaterImageBridge.insertImage(...)`，批量回填使用 `insertImages([{ token, url }])`。图片会回填原位置并随小剧场记录保存。
 
 ## 兼容性说明
 

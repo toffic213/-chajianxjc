@@ -671,10 +671,11 @@
         current: itemsData[0] ? newItem(itemsData[0].content, request.prompts.map((prompt) => prompt.name), itemsData[0].title) : null,
         items: itemsData.map((data) => newItem(data.content, request.prompts.map((prompt) => prompt.name), data.title)),
         favorites: favorites,
-        active: 'current',
+        active: null,
         updatedAt: new Date().toISOString()
       };
       if (record.current) record.items[0] = record.current;
+      record.active = record.current?.id || record.favorites[0]?.id || 'current';
       console.log(`[${PLUGIN_ID}] [日志] record创建完成: items=${record.items.length}, current=${record.current?.title || 'null'}`);
       console.log(`[${PLUGIN_ID}] [诊断] 即将 saveMessageRecord`);
       await saveMessageRecord(message, record);
@@ -736,18 +737,29 @@
       .replace(/\n/g, '<br>');
   }
 
+  function imagePromptTextNodes(text) {
+    const template = hostDocument.createElement('template');
+    template.innerHTML = safeHtml(text);
+    const walker = hostDocument.createTreeWalker(template.content, 4);
+    const nodes = [];
+    let node = walker.nextNode();
+    while (node) {
+      const parent = node.parentElement;
+      if (!parent?.closest('script, style, textarea, template, noscript, title, option')) nodes.push(node);
+      node = walker.nextNode();
+    }
+    return { template, nodes };
+  }
+
   function extractImagePrompts(text) {
     const prompts = [];
-    const source = String(text || '');
-    for (const match of source.matchAll(new RegExp(IMAGE_PROMPT_PATTERN.source, IMAGE_PROMPT_PATTERN.flags))) {
-      const prompt = String(match[1] || '').trim();
-      if (!prompt) continue;
-      prompts.push({
-        raw: match[0],
-        prompt,
-        occurrence: prompts.length,
-        sourceIndex: match.index
-      });
+    const { nodes } = imagePromptTextNodes(text);
+    for (const node of nodes) {
+      for (const match of node.data.matchAll(new RegExp(IMAGE_PROMPT_PATTERN.source, IMAGE_PROMPT_PATTERN.flags))) {
+        const prompt = String(match[1] || '').trim();
+        if (!prompt) continue;
+        prompts.push({ raw: match[0], prompt, occurrence: prompts.length });
+      }
     }
     return prompts;
   }
@@ -775,23 +787,51 @@
     iframe.setAttribute('title', '小剧场内容');
     iframe.setAttribute('data-stg-frame-id', frameId);
 
-    const prompts = extractImagePrompts(text).map((entry, index) => ({
-      ...entry,
-      slotId: `${frameId}-image-${index}`,
-      storageKey: `${entry.raw}::${entry.occurrence}`,
-      frameId,
-      messageId: Number.isFinite(Number(options.messageId)) ? Number(options.messageId) : null,
-      itemId: options.itemId || ''
-    }));
+    const { template, nodes } = imagePromptTextNodes(text);
+    const prompts = [];
     const generatedImages = options.generatedImages && typeof options.generatedImages === 'object' ? options.generatedImages : {};
-    let promptIndex = 0;
-    const renderedContent = safeHtml(text).replace(new RegExp(IMAGE_PROMPT_PATTERN.source, IMAGE_PROMPT_PATTERN.flags), () => {
-      const entry = prompts[promptIndex];
-      promptIndex += 1;
-      if (!entry) return '';
-      const savedImage = imageOutputHtml(generatedImages[entry.storageKey] || generatedImages[entry.raw] || generatedImages[entry.prompt]);
-      return `<span id="${entry.slotId}" class="stg-image-slot${savedImage ? ' has-image' : ''}" data-stg-image-slot="${entry.slotId}">${savedImage || `<span class="stg-image-placeholder">等待生图 · ${escapeHtml(entry.prompt)}</span>`}</span>`;
-    });
+    for (const node of nodes) {
+      const matches = [...node.data.matchAll(new RegExp(IMAGE_PROMPT_PATTERN.source, IMAGE_PROMPT_PATTERN.flags))];
+      if (!matches.length) continue;
+      const fragment = hostDocument.createDocumentFragment();
+      let cursor = 0;
+      for (const match of matches) {
+        const prompt = String(match[1] || '').trim();
+        if (!prompt) continue;
+        if (match.index > cursor) fragment.appendChild(hostDocument.createTextNode(node.data.slice(cursor, match.index)));
+        const occurrence = prompts.length;
+        const entry = {
+          raw: match[0],
+          prompt,
+          occurrence,
+          slotId: `${frameId}-image-${occurrence}`,
+          storageKey: `${match[0]}::${occurrence}`,
+          frameId,
+          messageId: Number.isFinite(Number(options.messageId)) ? Number(options.messageId) : null,
+          itemId: options.itemId || ''
+        };
+        const savedImage = imageOutputHtml(generatedImages[entry.storageKey] || generatedImages[entry.raw] || generatedImages[entry.prompt]);
+        entry.resolved = Boolean(savedImage);
+        const slot = hostDocument.createElement('span');
+        slot.id = entry.slotId;
+        slot.className = `stg-image-slot${savedImage ? ' has-image' : ''}`;
+        slot.dataset.stgImageSlot = entry.slotId;
+        if (savedImage) {
+          slot.innerHTML = savedImage;
+        } else {
+          const placeholder = hostDocument.createElement('span');
+          placeholder.className = 'stg-image-placeholder';
+          placeholder.textContent = `等待生图 · ${entry.prompt}`;
+          slot.appendChild(placeholder);
+        }
+        fragment.appendChild(slot);
+        prompts.push(entry);
+        cursor = match.index + match[0].length;
+      }
+      if (cursor < node.data.length) fragment.appendChild(hostDocument.createTextNode(node.data.slice(cursor)));
+      node.replaceWith(fragment);
+    }
+    const renderedContent = template.innerHTML;
 
     iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent;color:#eef2f5;font:15px/1.7 system-ui,sans-serif;overflow-wrap:anywhere}body{padding:16px}a{color:#8fc9ff}img{max-width:100%;height:auto}pre{white-space:pre-wrap;background:#111923;padding:10px;border-radius:6px}blockquote{margin:0;padding:8px 12px;border-left:3px solid #8fc9ff;background:#ffffff0d}.stg-image-slot{display:block;margin:12px 0;max-width:100%}.stg-image-slot.has-image{padding:0;background:transparent}.stg-image-slot img{display:block;max-width:100%;height:auto;margin:auto;border-radius:8px}.stg-image-placeholder{display:block;padding:14px;border:1px dashed #4f6f69;border-radius:8px;color:#9fc9bd;background:#10201d;text-align:center;font-size:12px}</style></head><body>${renderedContent}<script>
 var frameId='${frameId}';
@@ -833,33 +873,32 @@ window.addEventListener('message', function(e){
 
   function publishImagePrompts(container, iframe) {
     const prompts = iframe?.stgImagePrompts || [];
-    container.querySelector('.stg-image-bridge')?.remove();
+    delete container.dataset.stgImageTokens;
     if (!prompts.length) {
-      delete container.dataset.stgImageTokens;
       delete container.dataset.stgImagePrompts;
       return;
     }
 
-    container.dataset.stgImageTokens = prompts.map((entry) => entry.raw).join('\n');
     container.dataset.stgImagePrompts = JSON.stringify(prompts.map(({ raw, prompt, occurrence, slotId, storageKey, frameId, messageId, itemId }) => ({ raw, prompt, occurrence, slotId, storageKey, frameId, messageId, itemId })));
-    const bridge = hostDocument.createElement('div');
-    bridge.className = 'stg-image-bridge';
-    bridge.setAttribute('aria-hidden', 'true');
-    prompts.forEach((entry) => {
-      const token = hostDocument.createElement('span');
-      token.className = 'stg-image-prompt-token';
-      token.dataset.stgImageToken = entry.raw;
-      token.dataset.stgImagePrompt = entry.prompt;
-      token.dataset.stgImageSlot = entry.slotId;
-      token.textContent = entry.raw;
-      bridge.appendChild(token);
-    });
-    container.appendChild(bridge);
-
-    const detail = { source: PLUGIN_ID, container, iframe, prompts: prompts.map((entry) => ({ ...entry })) };
+    container.dataset.stgTheaterId ||= `stg-theater-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const pendingPrompts = prompts.filter((entry) => !entry.resolved);
+    if (!pendingPrompts.length) return;
+    const detail = {
+      source: PLUGIN_ID,
+      theaterId: container.dataset.stgTheaterId,
+      prompts: pendingPrompts.map((entry) => ({
+        ...entry,
+        resolve: (output) => insertGeneratedImage(entry.slotId, output)
+      })),
+      resolve: (reference, output) => insertGeneratedImage(reference, output),
+      resolveAll: (outputs) => pendingPrompts.reduce((count, entry, index) => count + insertGeneratedImage(entry.slotId, Array.isArray(outputs) ? outputs[index] : outputs), 0)
+    };
     setTimeout(() => {
-      hostDocument.dispatchEvent(new hostWindow.CustomEvent('stage-theater:image-prompts', { detail }));
-      hostWindow.dispatchEvent(new hostWindow.CustomEvent('stage-theater:image-prompts', { detail }));
+      hostDocument.dispatchEvent(new hostWindow.CustomEvent('stage-theater:image-prompts', {
+        detail,
+        bubbles: true,
+        composed: true
+      }));
     }, 0);
   }
 
@@ -877,6 +916,18 @@ window.addEventListener('message', function(e){
     }
     // 否则返回current或items[0]
     return record.current || record.items?.[0] || record.favorites?.[0] || null;
+  }
+
+  function recordItemIds(record) {
+    return new Set((record?.items || []).map((item) => item.id));
+  }
+
+  function isRecordItemFavorite(record, itemId) {
+    return Boolean(itemId && (record?.favorites || []).some((favorite) => favorite.id === itemId));
+  }
+
+  function firstRecordItemId(record) {
+    return record?.items?.[0]?.id || record?.favorites?.[0]?.id || 'current';
   }
 
   function hasTheaterRecord(record) {
@@ -911,7 +962,8 @@ window.addEventListener('message', function(e){
     const item = activeRecordItem(record);
     box.dataset.stgLastItemId = item?.id || '';
 
-    const isFavorite = item && item.id !== record.current?.id;
+    const isFavorite = isRecordItemFavorite(record, item?.id);
+    const activeId = item?.id || firstRecordItemId(record);
 
     // 构建下拉菜单：显示所有小剧场版本
     const choices = [];
@@ -926,8 +978,10 @@ window.addEventListener('message', function(e){
     }
 
     // 添加收藏
+    const generatedIds = recordItemIds(record);
     if (record.favorites && record.favorites.length > 0) {
       record.favorites.forEach((fav, idx) => {
+        if (generatedIds.has(fav.id)) return;
         choices.push({ id: fav.id, label: `💾 ${fav.title || '收藏'} ${idx + 1}` });
       });
     }
@@ -939,8 +993,8 @@ window.addEventListener('message', function(e){
       <header class="stg-theater-header">
         <span class="stg-theater-title">${SVG.theater}<span>小剧场</span></span>
         <div class="stg-theater-tools">
-          ${choices.length > 0 ? `<select class="stg-theater-select" data-stg-field="active-item" aria-label="选择小剧场">${choices.map((choice) => `<option value="${choice.id}" ${record.active === choice.id ? 'selected' : ''}>${choice.label}</option>`).join('')}</select>` : ''}
-          ${button('favorite', isFavorite || item?.favorite ? '取消收藏' : '收藏', SVG.star, item?.favorite || isFavorite ? 'is-active' : '')}
+          ${choices.length > 0 ? `<select class="stg-theater-select" data-stg-field="active-item" aria-label="选择小剧场">${choices.map((choice) => `<option value="${choice.id}" ${activeId === choice.id ? 'selected' : ''}>${choice.label}</option>`).join('')}</select>` : ''}
+          ${button('favorite', isFavorite ? '取消收藏' : '收藏', SVG.star, isFavorite ? 'is-active' : '')}
           ${button('edit', '编辑', SVG.edit)}
           ${button('regenerate', '重新生成', SVG.refresh)}
           ${button('delete', '删除此条', SVG.trash)}
@@ -1930,20 +1984,23 @@ window.addEventListener('message', function(e){
         await updateRecord(messageId, (next) => {
           const item = activeRecordItem(next);
           if (!item) return next;
-          const isCurrent = item.id === next.current?.id;
-
-          if (isCurrent) {
-            const alreadyFavorite = (next.favorites || []).some((fav) => fav.id === item.id);
-            if (alreadyFavorite) {
-              next.favorites = (next.favorites || []).filter((fav) => fav.id !== item.id);
-              if (next.current) next.current.favorite = false;
-            } else {
-              const favoriteItem = { ...item, favorite: true };
-              next.favorites = [...(next.favorites || []), favoriteItem];
-              if (next.current && next.current.id === item.id) next.current.favorite = true;
+          const alreadyFavorite = isRecordItemFavorite(next, item.id);
+          if (alreadyFavorite) {
+            next.favorites = (next.favorites || []).filter((favorite) => favorite.id !== item.id);
+            for (const generatedItem of next.items || []) {
+              if (generatedItem.id === item.id) generatedItem.favorite = false;
+            }
+            if (next.current?.id === item.id) next.current.favorite = false;
+            if (!(next.items || []).some((generatedItem) => generatedItem.id === item.id)) {
+              next.active = firstRecordItemId(next);
             }
           } else {
-            next.favorites = (next.favorites || []).filter((fav) => fav.id !== item.id);
+            const favoriteItem = { ...clone(item), favorite: true };
+            next.favorites = [...(next.favorites || []), favoriteItem];
+            for (const generatedItem of next.items || []) {
+              if (generatedItem.id === item.id) generatedItem.favorite = true;
+            }
+            if (next.current?.id === item.id) next.current.favorite = true;
           }
           return next;
         });
@@ -1954,13 +2011,16 @@ window.addEventListener('message', function(e){
       if (action === 'delete') {
         await updateRecord(messageId, (next) => {
           const item = activeRecordItem(next);
-          if (item && item.id !== next.current?.id) {
+          if (!item) return next;
+          const itemIndex = (next.items || []).findIndex((generatedItem) => generatedItem.id === item.id);
+          if (itemIndex >= 0) {
+            next.items = next.items.filter((generatedItem) => generatedItem.id !== item.id);
             next.favorites = (next.favorites || []).filter((favorite) => favorite.id !== item.id);
-            next.active = 'current';
+            next.current = next.items[0] || null;
+            next.active = next.items[itemIndex]?.id || next.items[itemIndex - 1]?.id || next.favorites?.[0]?.id || 'current';
           } else {
-            next.current = null;
-            next.items = [];
-            next.active = next.favorites?.[0]?.id || 'current';
+            next.favorites = (next.favorites || []).filter((favorite) => favorite.id !== item.id);
+            next.active = firstRecordItemId(next);
           }
           if (!hasTheaterRecord(next)) return null;
           return next;
@@ -2197,8 +2257,15 @@ window.addEventListener('message', function(e){
         const record = getMessageRecord(message);
         if (record && favoriteId) {
           record.favorites = (record.favorites || []).filter((fav) => fav.id !== favoriteId);
-          if (record.active === favoriteId) record.active = 'current';
+          for (const item of record.items || []) {
+            if (item.id === favoriteId) item.favorite = false;
+          }
+          if (record.current?.id === favoriteId) record.current.favorite = false;
+          if (record.active === favoriteId && !(record.items || []).some((item) => item.id === favoriteId)) {
+            record.active = firstRecordItemId(record);
+          }
           await saveMessageRecord(message, record);
+          renderMessageTheater(messageId);
           renderTab('favorites');
         }
       }
@@ -2574,6 +2641,8 @@ window.addEventListener('message', function(e){
 
     for (const entry of matches) {
       const iframe = hostDocument.querySelector(`iframe[data-stg-frame-id="${CSS.escape(entry.frameId)}"]`);
+      const liveEntry = iframe?.stgImagePrompts?.find((item) => item.slotId === entry.slotId);
+      if (liveEntry) liveEntry.resolved = true;
       iframe?.contentWindow?.postMessage({
         type: 'stg-insert-image',
         frameId: entry.frameId,
@@ -2588,6 +2657,7 @@ window.addEventListener('message', function(e){
 
   const instance = {
     getImagePrompts: currentImagePrompts,
+    getPendingImagePrompts: () => currentImagePrompts().filter((entry) => !entry.resolved),
     extractImagePrompts,
     insertImage: (imageTokens, imageHtml) => insertGeneratedImage(imageTokens, imageHtml) > 0,
     insertImages: (items) => insertGeneratedImage(items),
