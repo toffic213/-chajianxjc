@@ -1055,8 +1055,11 @@ setTimeout(function(){
     // 立刻给 FAB 加 inline style（不管是否新建）
     fab.style.cssText = `
       position: fixed;
-      right: 12px;
-      bottom: 12px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      
+      
       z-index: 2147483647;
       width: 44px;
       height: 44px;
