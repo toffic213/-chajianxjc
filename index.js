@@ -1115,20 +1115,17 @@ setTimeout(function(){
     if (saved) {
       try {
         const point = JSON.parse(saved);
-        const right = Number(point?.right);
-        const bottom = Number(point?.bottom);
+        const left = Number(point?.left);
+        const top = Number(point?.top);
 
-        // 验证和约束保存的位置
-        if (Number.isFinite(right) && Number.isFinite(bottom)) {
-          const maxRight = viewport.innerWidth - width - padding;
-          const maxBottom = viewport.innerHeight - height - padding;
-          const constrainedRight = Math.max(padding, Math.min(maxRight, right));
-          const constrainedBottom = Math.max(padding, Math.min(maxBottom, bottom));
+        if (Number.isFinite(left) && Number.isFinite(top)) {
+          const constrainedLeft = Math.max(padding, Math.min(viewport.innerWidth - width - padding, left));
+          const constrainedTop = Math.max(padding, Math.min(viewport.innerHeight - height - padding, top));
 
-          fab.style.right = `${constrainedRight}px`;
-          fab.style.bottom = `${constrainedBottom}px`;
-          fab.style.top = 'auto';
-          fab.style.left = 'auto';
+          fab.style.left = `${constrainedLeft}px`;
+          fab.style.top = `${constrainedTop}px`;
+          fab.style.right = 'auto';
+          fab.style.bottom = 'auto';
           fab.style.transform = 'none';
           positionPanel();
           return;
@@ -1136,20 +1133,20 @@ setTimeout(function(){
       } catch {}
     }
 
-    // 没有保存位置，则居中显示
-    const centerRight = (viewport.innerWidth - width) / 2;
-    const centerBottom = (viewport.innerHeight - height) / 2;
-    fab.style.right = `${Math.round(centerRight)}px`;
-    fab.style.bottom = `${Math.round(centerBottom)}px`;
-    fab.style.top = 'auto';
-    fab.style.left = 'auto';
+    // 首次加载，居中显示
+    const centerLeft = (viewport.innerWidth - width) / 2;
+    const centerTop = (viewport.innerHeight - height) / 2;
+    fab.style.left = `${Math.round(centerLeft)}px`;
+    fab.style.top = `${Math.round(centerTop)}px`;
+    fab.style.right = 'auto';
+    fab.style.bottom = 'auto';
     fab.style.transform = 'none';
     positionPanel();
   }
 
-  function saveFabPosition(fab, right, bottom) {
+  function saveFabPosition(fab, left, top) {
     try {
-      localStorage.setItem(`${STORAGE_KEY}-fab`, JSON.stringify({ right, bottom }));
+      localStorage.setItem(`${STORAGE_KEY}-fab`, JSON.stringify({ left, top }));
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] FAB position save failed`, error);
     }
@@ -1323,14 +1320,12 @@ setTimeout(function(){
           const finalTop = rect.top;
           const constrainLeft = Math.max(padding, Math.min(viewport.innerWidth - width - padding, finalLeft));
           const constrainTop = Math.max(padding, Math.min(viewport.innerHeight - height - padding, finalTop));
-          const right = viewport.innerWidth - constrainLeft - width;
-          const bottom = viewport.innerHeight - constrainTop - height;
           fab.style.transform = '';
-          fab.style.left = 'auto';
-          fab.style.top = 'auto';
-          fab.style.right = `${Math.round(right)}px`;
-          fab.style.bottom = `${Math.round(bottom)}px`;
-          saveFabPosition(fab, right, bottom);
+          fab.style.left = `${Math.round(constrainLeft)}px`;
+          fab.style.top = `${Math.round(constrainTop)}px`;
+          fab.style.right = 'auto';
+          fab.style.bottom = 'auto';
+          saveFabPosition(fab, constrainLeft, constrainTop);
           positionFab();
         } else {
           fab.style.transform = '';
