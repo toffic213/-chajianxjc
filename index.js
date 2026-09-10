@@ -1689,6 +1689,9 @@ setTimeout(function(){
     }
   }, 250);
 
+  // 立刻尝试初始化（不依赖事件）
+  setTimeout(fire, 100);
+
   const previousInstance = hostWindow[INSTANCE_KEY];
   if (previousInstance?.destroy) {
     try {
