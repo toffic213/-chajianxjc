@@ -18,9 +18,9 @@
 .stg-fab,#stage-theater-fab {
   position: fixed; right: 22px; bottom: 22px; z-index: 2147483647 !important;
   width: 48px; height: 48px; display: grid; place-items: center; padding: 0;
-  border: 2px solid #86c8b2; border-radius: 50%;
-  background: linear-gradient(135deg, #1a4d45, #0d2a27); background-size: cover; background-position: center;
-  color: #c7f3e3; box-shadow: 0 8px 24px #000a, inset 0 1px 0 #ffffff20;
+  border: none; border-radius: 50%;
+  background: transparent;
+  color: #c7f3e3; box-shadow: 0 8px 24px #000a;
   cursor: pointer; font-size: 23px; opacity: 1 !important; pointer-events: auto;
   visibility: visible !important; touch-action: none; user-select: none;
   transition: transform 0.25s ease, box-shadow 0.25s ease;
