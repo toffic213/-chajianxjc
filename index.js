@@ -37,6 +37,12 @@
     fabSize: 48,
     fabImage: null,
     fabShape: 'circle',
+    selectedCategories: [],
+    randomMode: {
+      enabled: false,
+      groups: [],
+      count: 1
+    },
     profiles: [{
       id: 'default',
       name: '默认 API',
@@ -239,6 +245,23 @@
   }
 
   function selectedPrompts() {
+    if (settings.randomMode?.enabled) {
+      const groups = settings.randomMode.groups || [];
+      const count = Math.max(1, Number(settings.randomMode.count) || 1);
+      let pool = settings.prompts.filter((prompt) => prompt.enabled && String(prompt.content || '').trim());
+      if (groups.length > 0) {
+        pool = pool.filter(p => groups.includes(p.category || '默认'));
+      }
+      if (!pool.length) return [];
+      const selected = [];
+      const copy = [...pool];
+      for (let i = 0; i < count && copy.length; i++) {
+        const idx = Math.floor(Math.random() * copy.length);
+        selected.push(copy[idx]);
+        copy.splice(idx, 1);
+      }
+      return selected.sort((a, b) => Number(a.order) - Number(b.order));
+    }
     return settings.prompts
       .filter((prompt) => prompt.enabled && prompt.selected && String(prompt.content || '').trim())
       .sort((a, b) => Number(a.order) - Number(b.order));
@@ -649,8 +672,8 @@ setTimeout(function(){
     return iframe;
   }
 
-  function button(action, label, icon, extra = '') {
-    return `<button type="button" class="stg-icon-button ${extra}" data-stg-action="${action}" title="${label}" aria-label="${label}">${icon}</button>`;
+  function button(action, label, icon, extra = '', style = '') {
+    return `<button type="button" class="stg-icon-button ${extra}" data-stg-action="${action}" title="${label}" aria-label="${label}" ${style}>${icon}</button>`;
   }
 
   function activeRecordItem(record) {
@@ -810,7 +833,24 @@ setTimeout(function(){
     root.querySelectorAll('[data-stg-tab]').forEach((buttonEl) => buttonEl.classList.toggle('is-active', buttonEl.dataset.stgTab === tab));
     if (tab === 'general') body.innerHTML = generalTab();
     if (tab === 'api') body.innerHTML = apiTab();
-    if (tab === 'prompts') body.innerHTML = promptsTab();
+    if (tab === 'prompts') {
+      body.innerHTML = promptsTab();
+      // 为随机模式复选框添加变动监听
+      setTimeout(() => {
+        const enabledCheckbox = hostDocument.getElementById('stg-random-enabled');
+        if (enabledCheckbox) {
+          enabledCheckbox.addEventListener('change', async (e) => {
+            if (!e.target.checked) {
+              settings.randomMode = { enabled: false, group: '', count: 1 };
+            } else {
+              settings.randomMode = { enabled: true, group: settings.randomMode?.group || '', count: settings.randomMode?.count || 1 };
+            }
+            await saveSettings();
+            renderTab('prompts');
+          });
+        }
+      }, 0);
+    }
     if (tab === 'context') body.innerHTML = contextTab();
     if (tab === 'history') body.innerHTML = historyTab();
     if (tab === 'favorites') body.innerHTML = favoritesTab();
@@ -853,7 +893,14 @@ setTimeout(function(){
       <div class="stg-inline-actions">${button('new-profile', '新建档案', SVG.plus, 'stg-small-action')}${button('delete-profile', '删除档案', SVG.trash, 'stg-small-action')}</div>
       <label class="stg-field"><span>API 地址</span><input data-stg-profile-field="baseUrl" value="${escapeAttr(profile.baseUrl)}" placeholder="https://example.com/v1"></label>
       <label class="stg-field"><span>API Key</span><input type="password" data-stg-profile-field="apiKey" value="${escapeAttr(profile.apiKey)}"></label>
-      <label class="stg-field"><span>模型名称</span><div class="stg-input-action"><input data-stg-profile-field="model" value="${escapeAttr(profile.model)}"><button type="button" data-stg-action="fetch-models" title="获取模型列表">${SVG.refresh}</button></div></label>
+      <div class="stg-field">
+        <span>选择模型</span>
+        <div style="display:flex;gap:5px">
+          <input data-stg-profile-field="model" value="${escapeAttr(profile.model)}" placeholder="输入模型名或点击刷新获取列表" style="flex:1">
+          <button type="button" data-stg-action="fetch-models" title="获取可用模型" style="width:35px;height:35px;padding:6px;border:1px solid var(--stg-line);border-radius:5px;background:var(--stg-panel-2);cursor:pointer;display:grid;place-items:center;color:var(--stg-text)">${SVG.refresh}</button>
+        </div>
+        <div id="stg-model-list" class="stg-model-list" style="display:none"></div>
+      </div>
       <div class="stg-grid-two"><label class="stg-field"><span>温度</span><input type="number" min="0" max="2" step="0.1" data-stg-profile-field="temperature" value="${profile.temperature}"></label><label class="stg-field"><span>最大输出</span><input type="number" min="1" step="1" data-stg-profile-field="maxTokens" value="${profile.maxTokens}"></label></div>
       <label class="stg-switch-row"><span>流式输出</span><input type="checkbox" data-stg-profile-field="stream" ${profile.stream ? 'checked' : ''}><i></i></label>
       <label class="stg-field"><span>档案名称</span><input data-stg-profile-field="name" value="${escapeAttr(profile.name)}"></label>
@@ -861,13 +908,90 @@ setTimeout(function(){
   }
 
   function promptsTab() {
-    const rows = settings.prompts.slice().sort((a, b) => Number(a.order) - Number(b.order)).map((prompt) => `<div class="stg-prompt-row" data-stg-prompt-id="${prompt.id}">
-      <div class="stg-prompt-top"><label class="stg-check"><input type="checkbox" data-stg-prompt-field="selected" ${prompt.selected ? 'checked' : ''}><span></span></label><input data-stg-prompt-field="name" value="${escapeAttr(prompt.name)}"><button type="button" data-stg-action="duplicate-prompt" title="复制">${SVG.copy}</button><button type="button" data-stg-action="delete-prompt" title="删除">${SVG.trash}</button></div>
-      <div class="stg-prompt-meta"><label>启用 <input type="checkbox" data-stg-prompt-field="enabled" ${prompt.enabled ? 'checked' : ''}></label><input data-stg-prompt-field="category" value="${escapeAttr(prompt.category)}" placeholder="分类"><input type="number" data-stg-prompt-field="order" value="${prompt.order}" title="排序"></div>
-      <textarea data-stg-prompt-field="content" placeholder="提示词正文">${escapeHtml(prompt.content)}</textarea>
-      <input data-stg-prompt-field="note" value="${escapeAttr(prompt.note)}" placeholder="备注">
-    </div>`).join('');
-    return `<div class="stg-section"><div class="stg-inline-actions">${button('new-prompt', '新增提示词', SVG.plus, 'stg-small-action')}${button('export-prompts', '导出', SVG.download, 'stg-small-action')}${button('import-prompts', '导入', SVG.upload, 'stg-small-action')}</div><div class="stg-prompt-list">${rows || '<p class="stg-muted">暂无提示词。</p>'}</div></div>`;
+    const grouped = {};
+    settings.prompts.forEach(p => {
+      const cat = p.category || '默认';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(p);
+    });
+
+    const categories = Object.keys(grouped).sort();
+    const selectedCategories = settings.selectedCategories || [];
+
+    // 顶部分组标签
+    const groupTags = categories.map(cat => `
+      <button type="button" class="stg-group-chip ${selectedCategories.includes(cat) ? 'active' : ''}"
+        data-category="${escapeAttr(cat)}"
+        style="padding:6px 12px;border:1px solid var(--stg-line);border-radius:16px;background:${selectedCategories.includes(cat) ? 'var(--stg-accent)' : '#1a2835'};color:${selectedCategories.includes(cat) ? '#0a0f14' : 'var(--stg-text)'};cursor:pointer;transition:all 0.2s ease;font-size:12px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px"
+        title="点击选择分组">
+        ${escapeHtml(cat)} <span style="font-size:10px;opacity:0.7">${grouped[cat].length}</span>
+      </button>
+    `).join('');
+
+    // 显示选中分组中的提示词
+    const displayCategories = selectedCategories.length ? selectedCategories : categories;
+    let promptsList = '';
+    displayCategories.forEach(cat => {
+      if (!grouped[cat]) return;
+      const prompts = grouped[cat];
+      prompts.forEach(p => {
+        const contentId = `prompt-content-${p.id}`;
+        promptsList += `<div style="margin-bottom:8px;padding:10px;background:#0d1620;border:1px solid var(--stg-line);border-radius:4px">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+            <button type="button" onclick="
+              const content = document.getElementById('${contentId}');
+              const btn = this;
+              if (content.style.display === 'none') {
+                content.style.display = 'block';
+                btn.textContent = '▼';
+              } else {
+                content.style.display = 'none';
+                btn.textContent = '▶';
+              }
+            " style="width:20px;height:20px;padding:0;background:transparent;border:none;cursor:pointer;color:var(--stg-text);font-weight:bold;font-size:12px;flex-shrink:0;display:grid;place-items:center">▶</button>
+            <label class="stg-check" style="flex-shrink:0"><input type="checkbox" data-stg-prompt-field="selected" ${p.selected ? 'checked' : ''}><span></span></label>
+            <input data-stg-prompt-field="name" value="${escapeAttr(p.name)}" style="flex:1;min-width:0;padding:4px;background:transparent;border:none;color:var(--stg-text);font-size:12px;outline:none">
+            <span style="font-size:11px;color:var(--stg-muted);background:#0a0f14;padding:2px 6px;border-radius:3px;flex-shrink:0">${escapeHtml(cat)}</span>
+            <button type="button" data-stg-action="duplicate-prompt" title="复制" style="width:24px;height:24px;padding:0;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;display:grid;place-items:center;color:var(--stg-muted);flex-shrink:0">${SVG.copy}</button>
+            <button type="button" data-stg-action="delete-prompt" title="删除" style="width:24px;height:24px;padding:0;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;display:grid;place-items:center;color:var(--stg-muted);flex-shrink:0" data-stg-prompt-id="${p.id}">${SVG.trash}</button>
+          </div>
+          <textarea id="${contentId}" data-stg-prompt-field="content" style="display:none;width:100%;min-height:80px;resize:vertical;padding:8px;background:#0e151a;border:1px solid var(--stg-line);border-radius:3px;color:var(--stg-text);font-size:12px">${escapeHtml(p.content)}</textarea>
+        </div>`;
+      });
+    });
+
+    return `<div class="stg-section">
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;color:var(--stg-muted);margin-bottom:8px">分组筛选 (点击选择)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${groupTags}
+          <button type="button" class="stg-group-chip" data-category="_all_" style="padding:6px 12px;border:1px solid var(--stg-line);border-radius:16px;background:${selectedCategories.length === 0 ? 'var(--stg-accent)' : '#1a2835'};color:${selectedCategories.length === 0 ? '#0a0f14' : 'var(--stg-text)'};cursor:pointer;transition:all 0.2s ease;font-size:12px;white-space:nowrap">全部</button>
+        </div>
+      </div>
+
+      <div class="stg-inline-actions">
+        ${button('new-prompt', '新提示词', SVG.plus, 'stg-small-action')}
+        ${button('new-group', '新分组', SVG.plus, 'stg-small-action')}
+        ${button('export-prompts', '导出', SVG.download, 'stg-small-action')}
+        ${button('import-prompts', '导入', SVG.upload, 'stg-small-action')}
+      </div>
+
+      <div style="margin:12px 0;padding:12px;background:#0d1620;border:1px solid var(--stg-line);border-radius:6px">
+        <div style="font-size:11px;color:var(--stg-muted);margin-bottom:8px">🎲 随机抽取设置</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <label style="display:flex;align-items:center;gap:6px;color:var(--stg-text);font-size:12px;flex-shrink:0">
+            <input type="checkbox" id="stg-random-enabled" ${settings.randomMode?.enabled ? 'checked' : ''} style="width:14px;height:14px;cursor:pointer">
+            启用随机
+          </label>
+          <input type="number" id="stg-random-count" min="1" max="99" value="${settings.randomMode?.count || 1}"
+            ${!settings.randomMode?.enabled ? 'disabled' : ''} style="width:50px;padding:4px;background:#0e151a;border:1px solid var(--stg-line);color:var(--stg-text);font-size:11px;border-radius:3px;cursor:${!settings.randomMode?.enabled ? 'not-allowed' : 'text'}" title="每次抽取数量">
+          <span style="color:var(--stg-muted);font-size:11px">条 / 从选中分组随机抽</span>
+          ${button('apply-random', '保存设置', SVG.play, 'stg-small-action')}
+        </div>
+      </div>
+
+      <div style="margin-top:12px">${promptsList || '<p class="stg-muted" style="text-align:center;padding:20px">暂无提示词</p>'}</div>
+    </div>`;
   }
 
   function contextTab() {
@@ -924,17 +1048,17 @@ setTimeout(function(){
 
     const modal = hostDocument.createElement('div');
     modal.id = `stg-modal-${favoriteId}`;
-    modal.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:#00000080;display:grid;place-items:center;z-index:2147483646;padding:20px`;
+    modal.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:grid;place-items:center;z-index:2147483646;padding:20px;backdrop-filter:blur(4px)`;
 
     const box = hostDocument.createElement('div');
-    box.style.cssText = `background:var(--stg-panel);border:1px solid var(--stg-line);border-radius:8px;width:min(90vw,800px);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px #000b`;
+    box.style.cssText = `background:var(--stg-panel);border:1px solid var(--stg-line);border-radius:8px;width:min(90vw,800px);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.6)`;
 
     box.innerHTML = `
-      <header style="display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid var(--stg-line)">
-        <strong>${escapeHtml(favorite.title || '小剧场')}</strong>
-        <button type="button" data-stg-action="close-modal" title="关闭" style="width:30px;height:30px;border:0;background:transparent;color:inherit;cursor:pointer;font-size:20px">${SVG.close}</button>
+      <header style="display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid var(--stg-line);background:var(--stg-panel-2)">
+        <strong style="color:var(--stg-text)">${escapeHtml(favorite.title || '小剧场')}</strong>
+        <button type="button" data-stg-action="close-modal" title="关闭" style="width:32px;height:32px;border:1px solid var(--stg-line);background:#0e151a;color:var(--stg-text);cursor:pointer;font-size:18px;border-radius:4px;display:grid;place-items:center;padding:0">${SVG.close}</button>
       </header>
-      <div style="flex:1;overflow:auto;color:var(--stg-text)"></div>
+      <div style="flex:1;overflow:auto;color:var(--stg-text);background:#10191e"></div>
     `;
 
     const content = box.querySelector('div:last-child');
@@ -984,13 +1108,12 @@ setTimeout(function(){
     if (saved) {
       try {
         const point = JSON.parse(saved);
-        const right = Number(point?.right);
-        const bottom = Number(point?.bottom);
-        if (Number.isFinite(right)) {
-          fab.style.right = `${Math.max(8, Math.min(Math.max(8, hostWindow.innerWidth - fab.offsetWidth - 8), right))}px`;
-        }
-        if (Number.isFinite(bottom)) {
-          fab.style.bottom = `${Math.max(8, Math.min(Math.max(8, hostWindow.innerHeight - fab.offsetHeight - 8), bottom))}px`;
+        const top = Number(point?.top);
+        const left = Number(point?.left);
+        if (Number.isFinite(top) && Number.isFinite(left)) {
+          fab.style.top = `${Math.max(8, Math.min(hostWindow.innerHeight - 60, top))}px`;
+          fab.style.left = `${Math.max(8, Math.min(hostWindow.innerWidth - 60, left))}px`;
+          fab.style.transform = 'none';
         }
       } catch {}
     }
@@ -999,10 +1122,11 @@ setTimeout(function(){
 
   function saveFabPosition(fab) {
     const rect = fab.getBoundingClientRect();
-    const right = Math.max(8, hostWindow.innerWidth - rect.right);
-    const bottom = Math.max(8, hostWindow.innerHeight - rect.bottom);
     try {
-      localStorage.setItem(`${STORAGE_KEY}-fab`, JSON.stringify({ right, bottom }));
+      localStorage.setItem(`${STORAGE_KEY}-fab`, JSON.stringify({
+        top: Math.max(8, Math.min(hostWindow.innerHeight - 60, rect.top)),
+        left: Math.max(8, Math.min(hostWindow.innerWidth - 60, rect.left))
+      }));
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] FAB position save failed`, error);
     }
@@ -1052,6 +1176,9 @@ setTimeout(function(){
 
     // 立刻给 FAB 加 inline style（不管是否新建）
     fab.style.cssText = `
+      display: flex;
+      align-items: center;
+      justify-content: center;
       position: fixed;
       top: calc(50% - 22px);
       left: calc(50% - 22px);
@@ -1203,7 +1330,7 @@ setTimeout(function(){
           suppressClick = false;
           return;
         }
-        togglePanel(true);
+        togglePanel();  // 点击悬浮球切换打开/关闭
       });
       fab.dataset.stageTheaterBound = 'true';
     }
@@ -1243,6 +1370,35 @@ setTimeout(function(){
   }
 
   async function handleClick(event) {
+    const groupChip = event.target.closest('[data-category]');
+    if (groupChip) {
+      const category = groupChip.dataset.category;
+      const selected = settings.selectedCategories || [];
+      if (category === '_all_') {
+        settings.selectedCategories = [];
+      } else {
+        if (selected.includes(category)) {
+          settings.selectedCategories = selected.filter(c => c !== category);
+        } else {
+          settings.selectedCategories = [...selected, category];
+        }
+      }
+      await saveSettings();
+      renderTab('prompts');
+      return;
+    }
+
+    const modelSelect = event.target.closest('[data-stg-model-select]');
+    if (modelSelect) {
+      const model = modelSelect.dataset.stgModelSelect;
+      const profile = activeProfile();
+      profile.model = model;
+      await saveSettings();
+      renderTab('api');
+      setStatus(`✓ 已选择模型"${model}"`);
+      return;
+    }
+
     const actionElement = event.target.closest('[data-stg-action]');
     const tab = event.target.closest('[data-stg-tab]');
     if (tab) {
@@ -1374,6 +1530,52 @@ setTimeout(function(){
     }
 
     // 其他操作（不需要theater的）
+    if (action === 'new-group') {
+      const groupName = hostWindow.prompt('请输入新分组名称：', '新分组');
+      if (groupName && groupName.trim()) {
+        const name = groupName.trim();
+        const exists = settings.prompts.some(p => (p.category || '默认') === name);
+        if (exists) return setStatus('分组已存在', true);
+        settings.prompts.push({
+          ...clone(DEFAULT_SETTINGS.prompts[0]),
+          id: `prompt-${Date.now()}`,
+          name: '新提示词',
+          category: name,
+          content: '',
+          order: settings.prompts.length
+        });
+        await saveSettings();
+        renderTab('prompts');
+        setStatus(`✓ 已创建分组"${name}"`);
+      }
+      return;
+    }
+    if (action === 'rename-group') {
+      const oldName = actionElement.dataset.stgGroup;
+      const newName = hostWindow.prompt(`请输入新分组名称（当前:"${oldName}"）:`, oldName);
+      if (newName && newName.trim() && newName !== oldName) {
+        const trimmed = newName.trim();
+        const exists = settings.prompts.some(p => (p.category || '默认') === trimmed);
+        if (exists) return setStatus('分组名已被使用', true);
+        settings.prompts.forEach(p => {
+          if ((p.category || '默认') === oldName) p.category = trimmed;
+        });
+        await saveSettings();
+        renderTab('prompts');
+        setStatus(`✓ 已更名为"${trimmed}"`);
+      }
+      return;
+    }
+    if (action === 'delete-group') {
+      const groupName = actionElement.dataset.stgGroup;
+      const prompts = settings.prompts.filter(p => (p.category || '默认') === groupName);
+      if (!confirm(`确定要删除分组"${groupName}"及其 ${prompts.length} 条提示词吗？`)) return;
+      settings.prompts = settings.prompts.filter(p => (p.category || '默认') !== groupName);
+      await saveSettings();
+      renderTab('prompts');
+      setStatus(`✓ 已删除分组"${groupName}"`);
+      return;
+    }
     if (action === 'new-profile') {
       const profile = { ...DEFAULT_SETTINGS.profiles[0], id: `profile-${Date.now()}`, name: `API ${settings.profiles.length + 1}` };
       settings.profiles.push(profile);
@@ -1394,15 +1596,40 @@ setTimeout(function(){
       try {
         const models = await fetchModels(activeProfile());
         if (!models.length) return setStatus('接口没有返回可用模型。', true);
-        const model = hostWindow.prompt(`可用模型：\n${models.join('\n')}\n\n请输入要使用的模型名称`, activeProfile().model || models[0]);
-        if (model) {
-          activeProfile().model = model.trim();
-          await saveSettings();
-          renderTab('api');
-        }
+        const modelList = root.querySelector('#stg-model-list');
+        if (!modelList) return;
+        const profile = activeProfile();
+        modelList.innerHTML = models.map(model => `<button type="button" class="stg-model-item ${model === profile.model ? 'selected' : ''}" data-stg-model-select="${escapeAttr(model)}">${escapeHtml(model)}</button>`).join('');
+        modelList.style.display = 'block';
+        setStatus('✓ 模型列表已加载，点击选择');
       } catch (error) {
         setStatus(`获取模型失败：${error.message || error}`, true);
       }
+      return;
+    }
+    if (action === 'apply-random') {
+      const enabledEl = hostDocument.getElementById('stg-random-enabled');
+      const countEl = hostDocument.getElementById('stg-random-count');
+
+      if (!enabledEl?.checked) return setStatus('请先启用"启用随机"', true);
+
+      const groups = settings.selectedCategories || [];
+      const count = Math.max(1, Math.min(99, parseInt(countEl?.value || '1') || 1));
+
+      let pool = settings.prompts.filter(p => p.enabled && String(p.content || '').trim());
+      if (groups.length > 0) {
+        pool = pool.filter(p => groups.includes(p.category || '默认'));
+      }
+
+      if (!pool.length) {
+        return setStatus(groups.length ? `选中分组中没有启用的提示词` : '没有启用的提示词', true);
+      }
+
+      settings.randomMode = { enabled: true, groups, count };
+      await saveSettings();
+      renderTab('prompts');
+      const groupNames = groups.length ? groups.join(', ') : '全部';
+      setStatus(`✓ 已保存: 从${groupNames}中每次随机抽取${count}条提示词`);
       return;
     }
     if (action === 'new-prompt') {
@@ -1412,18 +1639,52 @@ setTimeout(function(){
       return;
     }
     if (action === 'delete-prompt') {
-      const row = actionElement.closest('[data-stg-prompt-id]');
-      settings.prompts = settings.prompts.filter((prompt) => prompt.id !== row?.dataset.stgPromptId);
-      await saveSettings();
-      renderTab('prompts');
+      const row = actionElement.closest('div[data-stg-prompt-id]') || actionElement.closest('button[data-stg-prompt-id]')?.parentElement?.parentElement?.parentElement;
+      let promptId = actionElement.dataset.stgPromptId;
+      if (!promptId && row) {
+        promptId = row.dataset.stgPromptId;
+      }
+      if (!promptId) {
+        promptId = actionElement.closest('button[data-stg-prompt-id]')?.dataset.stgPromptId;
+      }
+      if (promptId) {
+        settings.prompts = settings.prompts.filter((prompt) => prompt.id !== promptId);
+        await saveSettings();
+        renderTab('prompts');
+      }
       return;
     }
     if (action === 'duplicate-prompt') {
-      const row = actionElement.closest('[data-stg-prompt-id]');
-      const source = settings.prompts.find((prompt) => prompt.id === row?.dataset.stgPromptId);
-      if (source) settings.prompts.push({ ...clone(source), id: `prompt-${Date.now()}`, name: `${source.name} 副本`, order: settings.prompts.length });
-      await saveSettings();
-      renderTab('prompts');
+      let promptId = null;
+      let btn = actionElement;
+      while (btn && !promptId) {
+        if (btn.dataset?.stgPromptId) promptId = btn.dataset.stgPromptId;
+        btn = btn.previousElementSibling;
+        if (!btn && actionElement.parentElement) btn = actionElement.parentElement.querySelector('button[data-stg-prompt-id]');
+      }
+      if (!promptId) {
+        for (let el of actionElement.parentElement?.querySelectorAll('[data-stg-prompt-field]') || []) {
+          if (el.value) {
+            const parentDiv = actionElement.closest('div');
+            if (parentDiv) {
+              const textarea = parentDiv.querySelector('textarea[data-stg-prompt-field="content"]');
+              if (textarea) {
+                const allPrompts = settings.prompts;
+                for (let p of allPrompts) {
+                  if (p.content === textarea.value) promptId = p.id;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      const source = promptId ? settings.prompts.find((prompt) => prompt.id === promptId) : null;
+      if (source) {
+        settings.prompts.push({ ...clone(source), id: `prompt-${Date.now()}`, name: `${source.name} 副本`, order: settings.prompts.length });
+        await saveSettings();
+        renderTab('prompts');
+      }
       return;
     }
     if (action === 'export-prompts') {
@@ -1488,6 +1749,25 @@ setTimeout(function(){
 
   async function handleChange(event) {
     const target = event.target;
+    if (target.id === 'stg-random-enabled') {
+      if (!target.checked) {
+        settings.randomMode = { enabled: false, group: '', count: 1 };
+      } else {
+        settings.randomMode = { enabled: true, group: settings.randomMode?.group || '', count: settings.randomMode?.count || 1 };
+      }
+      await saveSettings();
+      renderTab('prompts');
+      return;
+    }
+    if (target.id === 'stg-random-group' || target.id === 'stg-random-count') {
+      // 实时更新 settings
+      if (settings.randomMode?.enabled) {
+        if (target.id === 'stg-random-group') settings.randomMode.group = target.value;
+        if (target.id === 'stg-random-count') settings.randomMode.count = Math.max(1, parseInt(target.value) || 1);
+        await saveSettings();
+      }
+      return;
+    }
     if (target.matches('[data-stg-import]') && target.files?.[0]) {
       try {
         const data = JSON.parse(await target.files[0].text());
