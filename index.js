@@ -38,6 +38,8 @@
     fabImage: null,
     fabShape: 'circle',
     selectedCategories: [],
+    selectedWorldbooks: [],
+    systemPrompt: '你是一个专门生成聊天附属小剧场的编剧和前端排版助手。严格依据给定设定，不改写原聊天，不替用户行动。输出可直接放进安全沙盒 iframe 展示的 HTML 内容。',
     randomMode: {
       enabled: false,
       groups: [],
@@ -77,9 +79,17 @@
   let fabResizeBound = false;
   let fabResizeHandler = null;
   let fabResizeWindow = null;
+  const logs = [];
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
+  }
+
+  function addLog(message, level = 'info') {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = { timestamp, level, message };
+    logs.push(logEntry);
+    if (logs.length > 200) logs.shift();
   }
 
   function mergeSettings(raw) {
@@ -323,8 +333,12 @@
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] worldbook names failed`, error);
     }
+    const selectedNames = settings.selectedWorldbooks && settings.selectedWorldbooks.length > 0
+      ? new Set(settings.selectedWorldbooks)
+      : names;
     const chunks = [];
-    for (const name of names) {
+    for (const name of selectedNames) {
+      if (!names.has(name)) continue;
       try {
         const entries = await getBook(name);
         const enabled = (entries || []).filter((entry) => entry && entry.enabled);
@@ -379,7 +393,7 @@
       '请按以下格式严格返回结果：\n【标题】≤10字的简洁标题\n【内容】\n[小剧场HTML内容]\n\n如生成多个小剧场，用 ===== 分隔：\n【标题】标题1\n【内容】\n内容1\n=====\n【标题】标题2\n【内容】\n内容2'
     ].filter(Boolean).join('\n\n');
     return {
-      system: '你是一个专门生成聊天附属小剧场的编剧和前端排版助手。严格依据给定设定，不改写原聊天，不替用户行动。输出可直接放进安全沙盒 iframe 展示的 HTML 内容。',
+      system: settings.systemPrompt || '你是一个专门生成聊天附属小剧场的编剧和前端排版助手。严格依据给定设定，不改写原聊天，不替用户行动。输出可直接放进安全沙盒 iframe 展示的 HTML 内容。',
       user: payload,
       prompts
     };
@@ -797,6 +811,8 @@ setTimeout(function(){
           <button type="button" data-stg-tab="api">API</button>
           <button type="button" data-stg-tab="prompts">提示词</button>
           <button type="button" data-stg-tab="context">上下文</button>
+          <button type="button" data-stg-tab="system">系统</button>
+          <button type="button" data-stg-tab="logs">日志</button>
           <button type="button" data-stg-tab="history">记录</button>
           <button type="button" data-stg-tab="favorites">收藏库</button>
         </nav>
@@ -836,7 +852,6 @@ setTimeout(function(){
     if (tab === 'api') body.innerHTML = apiTab();
     if (tab === 'prompts') {
       body.innerHTML = promptsTab();
-      // 为随机模式复选框添加变动监听
       setTimeout(() => {
         const enabledCheckbox = hostDocument.getElementById('stg-random-enabled');
         if (enabledCheckbox) {
@@ -852,7 +867,12 @@ setTimeout(function(){
         }
       }, 0);
     }
-    if (tab === 'context') body.innerHTML = contextTab();
+    if (tab === 'context') {
+      body.innerHTML = contextTab();
+      setTimeout(() => updateWorldbookList(), 0);
+    }
+    if (tab === 'system') body.innerHTML = systemTab();
+    if (tab === 'logs') body.innerHTML = logsTab();
     if (tab === 'history') body.innerHTML = historyTab();
     if (tab === 'favorites') body.innerHTML = favoritesTab();
   }
@@ -937,7 +957,7 @@ setTimeout(function(){
       const prompts = grouped[cat];
       prompts.forEach(p => {
         const contentId = `prompt-content-${p.id}`;
-        promptsList += `<div style="margin-bottom:8px;padding:10px;background:#0d1620;border:1px solid var(--stg-line);border-radius:4px">
+        promptsList += `<div data-stg-prompt-id="${p.id}" style="margin-bottom:8px;padding:10px;background:#0d1620;border:1px solid var(--stg-line);border-radius:4px">
           <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
             <button type="button" onclick="
               const content = document.getElementById('${contentId}');
@@ -950,13 +970,17 @@ setTimeout(function(){
                 btn.textContent = '▶';
               }
             " style="width:20px;height:20px;padding:0;background:transparent;border:none;cursor:pointer;color:var(--stg-text);font-weight:bold;font-size:12px;flex-shrink:0;display:grid;place-items:center">▶</button>
-            <label class="stg-check" style="flex-shrink:0"><input type="checkbox" data-stg-prompt-field="selected" ${p.selected ? 'checked' : ''}><span></span></label>
-            <input data-stg-prompt-field="name" value="${escapeAttr(p.name)}" style="flex:1;min-width:0;padding:4px;background:transparent;border:none;color:var(--stg-text);font-size:12px;outline:none">
+            <label class="stg-check" style="flex-shrink:0;cursor:pointer" title="启用此提示词"><input type="checkbox" data-stg-prompt-field="enabled" ${p.enabled ? 'checked' : ''}><span></span></label>
+            <label class="stg-check" style="flex-shrink:0;cursor:pointer" title="选中进行生成"><input type="checkbox" data-stg-prompt-field="selected" ${p.selected ? 'checked' : ''}><span></span></label>
+            <input data-stg-prompt-field="name" value="${escapeAttr(p.name)}" placeholder="提示词名称" style="flex:1;min-width:0;padding:4px;background:transparent;border:none;color:var(--stg-text);font-size:12px;outline:none">
             <span style="font-size:11px;color:var(--stg-muted);background:#0a0f14;padding:2px 6px;border-radius:3px;flex-shrink:0">${escapeHtml(cat)}</span>
             <button type="button" data-stg-action="duplicate-prompt" title="复制" style="width:24px;height:24px;padding:0;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;display:grid;place-items:center;color:var(--stg-muted);flex-shrink:0">${SVG.copy}</button>
             <button type="button" data-stg-action="delete-prompt" title="删除" style="width:24px;height:24px;padding:0;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;display:grid;place-items:center;color:var(--stg-muted);flex-shrink:0" data-stg-prompt-id="${p.id}">${SVG.trash}</button>
           </div>
-          <textarea id="${contentId}" data-stg-prompt-field="content" style="display:none;width:100%;min-height:80px;resize:vertical;padding:8px;background:#0e151a;border:1px solid var(--stg-line);border-radius:3px;color:var(--stg-text);font-size:12px">${escapeHtml(p.content)}</textarea>
+          <textarea id="${contentId}" data-stg-prompt-field="content" placeholder="提示词内容" style="display:none;width:100%;min-height:80px;resize:vertical;padding:8px;background:#0e151a;border:1px solid var(--stg-line);border-radius:3px;color:var(--stg-text);font-size:12px">${escapeHtml(p.content)}</textarea>
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <button type="button" data-stg-action="save-prompt" title="保存此提示词" style="flex:1;height:28px;padding:4px;background:var(--stg-accent);color:#0a0f14;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600">${SVG.copy} 保存</button>
+          </div>
         </div>`;
       });
     });
@@ -1000,8 +1024,68 @@ setTimeout(function(){
       <label class="stg-field"><span>上下文深度</span><input type="number" min="0" step="1" data-stg-setting="contextDepth" value="${Number(settings.contextDepth) || 0}"></label>
       <label class="stg-field"><span>多提示词模式</span><select data-stg-setting="promptMode"><option value="merged" ${settings.promptMode === 'merged' ? 'selected' : ''}>合并请求</option><option value="separate" ${settings.promptMode === 'separate' ? 'selected' : ''}>分别请求</option></select></label>
       <label class="stg-switch-row"><span>发送已启用世界书条目</span><input type="checkbox" data-stg-setting="sendWorldbook" ${settings.sendWorldbook ? 'checked' : ''}><i></i></label>
+      <div id="stg-worldbooks-section" style="display:${settings.sendWorldbook ? 'block' : 'none'};margin-top:12px;padding:12px;background:#0d1620;border:1px solid var(--stg-line);border-radius:6px">
+        <div style="font-size:12px;color:var(--stg-muted);margin-bottom:8px">选择要发送的世界书（不勾选则发送全部）</div>
+        <div id="stg-worldbooks-list" style="display:grid;gap:8px"></div>
+      </div>
       <label class="stg-switch-row"><span>发送用户上一条消息</span><input type="checkbox" data-stg-setting="sendPreviousUser" ${settings.sendPreviousUser ? 'checked' : ''}><i></i></label>
       <p class="stg-muted">角色卡设定始终发送。深度为 0 时不发送聊天上下文，但仍发送当前 AI 回复。</p>
+    </div>`;
+  }
+
+  function systemTab() {
+    return `<div class="stg-section">
+      <label class="stg-field"><span style="margin-bottom:8px;display:block">系统提示词 (发给AI的系统消息)</span><textarea data-stg-setting="systemPrompt" style="min-height:200px;resize:vertical;padding:8px;background:#0a0f14;border:1px solid var(--stg-line);color:var(--stg-text);font-size:12px;border-radius:4px">${escapeHtml(settings.systemPrompt || DEFAULT_SETTINGS.systemPrompt)}</textarea></label>
+      <p class="stg-muted">这是发给AI的系统级提示词，用于规定AI生成小剧场时的基本行为。可添加破限功能干扰以及其他要求。</p>
+      <button type="button" class="stg-command-button" data-stg-action="reset-system-prompt" style="margin-top:12px">${SVG.refresh}<span>恢复默认系统提示词</span></button>
+    </div>`;
+  }
+
+  async function updateWorldbookList() {
+    const getNames = helper('getGlobalWorldbookNames');
+    const getCharNames = helper('getCharWorldbookNames');
+    const getChatName = helper('getChatWorldbookName');
+    const names = new Set();
+    try {
+      for (const name of (getNames ? getNames() || [] : [])) names.add(name);
+      if (getCharNames) {
+        const bound = getCharNames('current') || {};
+        if (bound.primary) names.add(bound.primary);
+        for (const name of bound.additional || []) names.add(name);
+      }
+      if (getChatName) {
+        const chatName = getChatName('current');
+        if (chatName) names.add(chatName);
+      }
+    } catch {}
+    const list = hostDocument.getElementById('stg-worldbooks-list');
+    if (!list) return;
+    const selectedNames = settings.selectedWorldbooks || [];
+    if (names.size === 0) {
+      list.innerHTML = '<p class="stg-muted" style="font-size:12px">未检测到世界书</p>';
+      return;
+    }
+    list.innerHTML = Array.from(names).map(name => `
+      <label class="stg-check" style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--stg-text)">
+        <input type="checkbox" value="${escapeAttr(name)}" data-stg-worldbook-name ${selectedNames.includes(name) ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer">
+        <span style="font-size:12px">${escapeHtml(name)}</span>
+      </label>
+    `).join('');
+  }
+
+  function logsTab() {
+    const logItems = logs.map((log, idx) => {
+      const color = log.level === 'error' ? '#f49c91' : log.level === 'warn' ? '#f0bd7a' : '#86c8b2';
+      return `<div style="padding:6px 8px;border-bottom:1px solid var(--stg-line);font-family:monospace;font-size:11px;color:${color}"><span style="color:var(--stg-muted)">${log.timestamp}</span> [${log.level.toUpperCase()}] ${escapeHtml(log.message)}</div>`;
+    }).join('');
+    return `<div class="stg-section" style="padding:0">
+      <div style="display:flex;gap:6px;padding:12px;border-bottom:1px solid var(--stg-line)">
+        <button type="button" class="stg-small-action" data-stg-action="clear-logs" title="清空日志">${SVG.trash}</button>
+        <button type="button" class="stg-small-action" data-stg-action="export-logs" title="导出日志">${SVG.download}</button>
+      </div>
+      <div style="max-height:calc(min(730px, 100vh - 100px) - 140px);overflow-y:auto;background:#0a0f14">
+        ${logItems || '<p class="stg-muted" style="padding:20px;text-align:center">暂无日志</p>'}
+      </div>
     </div>`;
   }
 
@@ -1659,6 +1743,28 @@ setTimeout(function(){
       renderTab('prompts');
       return;
     }
+    if (action === 'save-prompt') {
+      const row = actionElement.closest('[data-stg-prompt-id]');
+      const promptId = row?.dataset.stgPromptId;
+      if (promptId) {
+        const prompt = settings.prompts.find(p => p.id === promptId);
+        if (prompt) {
+          const nameInput = row.querySelector('[data-stg-prompt-field="name"]');
+          const contentTextarea = row.querySelector('[data-stg-prompt-field="content"]');
+          const enabledCheckbox = row.querySelector('[data-stg-prompt-field="enabled"]');
+          const selectedCheckbox = row.querySelector('[data-stg-prompt-field="selected"]');
+
+          if (nameInput) prompt.name = nameInput.value;
+          if (contentTextarea) prompt.content = contentTextarea.value;
+          if (enabledCheckbox) prompt.enabled = enabledCheckbox.checked;
+          if (selectedCheckbox) prompt.selected = selectedCheckbox.checked;
+
+          await saveSettings();
+          setStatus('✓ 提示词已保存');
+        }
+      }
+      return;
+    }
     if (action === 'delete-prompt') {
       const row = actionElement.closest('div[data-stg-prompt-id]') || actionElement.closest('button[data-stg-prompt-id]')?.parentElement?.parentElement?.parentElement;
       let promptId = actionElement.dataset.stgPromptId;
@@ -1766,10 +1872,39 @@ setTimeout(function(){
       }
       return;
     }
+    if (action === 'reset-system-prompt') {
+      settings.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
+      await saveSettings();
+      renderTab('system');
+      setStatus('✓ 已恢复默认系统提示词');
+      return;
+    }
+    if (action === 'clear-logs') {
+      logs.length = 0;
+      renderTab('logs');
+      setStatus('✓ 已清空日志');
+      return;
+    }
+    if (action === 'export-logs') {
+      const text = logs.map(log => `${log.timestamp} [${log.level.toUpperCase()}] ${log.message}`).join('\n');
+      const blob = new Blob([text], { type: 'text/plain' });
+      const link = hostDocument.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `stage-theater-logs-${new Date().toISOString().slice(0, 10)}.txt`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      return;
+    }
   }
 
   async function handleChange(event) {
     const target = event.target;
+    if (target.matches('[data-stg-worldbook-name]')) {
+      const selected = Array.from(hostDocument.querySelectorAll('[data-stg-worldbook-name]:checked')).map(el => el.value);
+      settings.selectedWorldbooks = selected;
+      await saveSettings();
+      return;
+    }
     if (target.id === 'stg-random-enabled') {
       if (!target.checked) {
         settings.randomMode = { enabled: false, group: '', count: 1 };
@@ -1842,11 +1977,23 @@ setTimeout(function(){
     }
     if (target.matches('[data-stg-setting]')) {
       const key = target.dataset.stgSetting;
-      settings[key] = target.type === 'checkbox' ? target.checked : (target.type === 'number' ? Number(target.value) : target.value);
+      if (target.tagName === 'TEXTAREA') {
+        settings[key] = target.value;
+      } else {
+        settings[key] = target.type === 'checkbox' ? target.checked : (target.type === 'number' ? Number(target.value) : target.value);
+      }
       await saveSettings();
       // 如果改变了FAB相关设置，重新应用样式
       if (['fabSize', 'fabShape'].includes(key)) {
         ensureFab();
+      }
+      // 如果改变了发送世界书设置，更新世界书列表显示
+      if (key === 'sendWorldbook') {
+        const section = hostDocument.getElementById('stg-worldbooks-section');
+        if (section) {
+          section.style.display = settings.sendWorldbook ? 'block' : 'none';
+          if (settings.sendWorldbook) updateWorldbookList();
+        }
       }
       return;
     }
@@ -1879,12 +2026,8 @@ setTimeout(function(){
 
   function handleInput(event) {
     const target = event.target;
-    if (target.matches('[data-stg-prompt-field]')) {
-      const row = target.closest('[data-stg-prompt-id]');
-      const prompt = settings.prompts.find((item) => item.id === row?.dataset.stgPromptId);
-      if (!prompt) return;
-      const key = target.dataset.stgPromptField;
-      prompt[key] = target.type === 'checkbox' ? target.checked : (target.type === 'number' ? Number(target.value) : target.value);
+    if (target.matches('[data-stg-setting="systemPrompt"]')) {
+      settings.systemPrompt = target.value;
       saveSettings();
     }
   }

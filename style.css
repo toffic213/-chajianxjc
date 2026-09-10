@@ -16,12 +16,12 @@
 #stg-root svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.15em; }
 
 .stg-fab,#stage-theater-fab {
-  position: fixed; right: 22px; bottom: 22px; z-index: 2147483647 !important;
-  width: 48px; height: 48px; display: grid; place-items: center; padding: 0;
+  position: fixed; z-index: 2147483647 !important;
+  display: grid; place-items: center; padding: 0;
   border: none; border-radius: 50%;
   background: transparent;
   color: #c7f3e3; box-shadow: 0 8px 24px #000a;
-  cursor: pointer; font-size: 23px; opacity: 1 !important; pointer-events: auto;
+  cursor: pointer; opacity: 1 !important; pointer-events: auto;
   visibility: visible !important; touch-action: none; user-select: none;
   transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
@@ -104,7 +104,7 @@
 .stg-field input, .stg-field select, .stg-theater-select, .stg-edit-area textarea {
   width: 100%; min-width: 0; border: 1px solid var(--stg-line);
   border-radius: 5px; padding: 8px 9px;
-  color: var(--stg-text); background: #0e151a; font: inherit;
+  color: var(--stg-text); background: #0a0f14; font: inherit;
 }
 
 .stg-field input:focus, .stg-field select:focus, .stg-edit-area textarea:focus {
@@ -212,8 +212,9 @@
 .stg-theater-tools { display: flex; align-items: center; gap: 2px; }
 
 .stg-icon-button {
-  width: 29px; height: 29px; border-radius: 4px;
-  font-size: 16px; transition: all 0.2s ease;
+  width: 32px; height: 32px; border-radius: 4px;
+  font-size: 18px; transition: all 0.2s ease;
+  display: grid; place-items: center;
 }
 
 .stg-icon-button:hover, .stg-icon-button.is-active {
