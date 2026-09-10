@@ -272,6 +272,12 @@
 
   async function saveMessageRecord(message, record) {
     if (!message) return;
+    const hasTheaterContent = Boolean(
+      record?.current ||
+      (Array.isArray(record?.items) && record.items.length) ||
+      (Array.isArray(record?.favorites) && record.favorites.length)
+    );
+    if (record && !hasTheaterContent) record = null;
     const id = chatMessages().indexOf(message);
     const state = getChatState();
     state.records ||= {};
@@ -870,7 +876,15 @@ window.addEventListener('message', function(e){
       if (found) return found;
     }
     // 否则返回current或items[0]
-    return record.current || record.items?.[0] || null;
+    return record.current || record.items?.[0] || record.favorites?.[0] || null;
+  }
+
+  function hasTheaterRecord(record) {
+    return Boolean(
+      record?.current ||
+      (Array.isArray(record?.items) && record.items.length) ||
+      (Array.isArray(record?.favorites) && record.favorites.length)
+    );
   }
 
   function theaterMountPoint(messageElement) {
@@ -885,7 +899,7 @@ window.addEventListener('message', function(e){
     console.log(`[${PLUGIN_ID}] [日志] renderMessageTheater: messageId=${messageId}, record.items=${record?.items?.length || 0}, record.favorites=${record?.favorites?.length || 0}`);
     const old = [...host.querySelectorAll('.stg-message-theater')]
       .find((element) => element.dataset.stgMessageId === String(messageId));
-    if (!record?.current && !(record?.favorites || []).length) {
+    if (!hasTheaterRecord(record)) {
       old?.remove();
       return;
     }
@@ -1395,11 +1409,16 @@ window.addEventListener('message', function(e){
   }
 
   function historyTab() {
-    const list = chatMessages().map((message, id) => ({ message, id })).filter(({ message }) => getMessageRecord(message)).slice(-20).reverse();
-    const rows = list.map(({ message, id }) => {
-      const record = getMessageRecord(message);
-      const item = activeRecordItem(record);
-      const title = item?.title || '（无标题）';
+    const list = chatMessages()
+      .map((message, id) => {
+        const record = getMessageRecord(message);
+        return { message, id, record, item: activeRecordItem(record) };
+      })
+      .filter(({ record, item }) => hasTheaterRecord(record) && item)
+      .slice(-20)
+      .reverse();
+    const rows = list.map(({ id, record, item }) => {
+      const title = item.title || '小剧场';
       return `<button type="button" class="stg-history-row" data-stg-message-id="${id}" data-stg-action="jump-history"><span>#${id}</span><strong>${escapeHtml(title)}</strong><small>${record?.updatedAt ? new Date(record.updatedAt).toLocaleString() : ''}</small></button>`;
     }).join('');
     return `<div class="stg-section"><div class="stg-history-list">${rows || '<p class="stg-muted">暂无生成记录。</p>'}</div></div>`;
@@ -1941,8 +1960,9 @@ window.addEventListener('message', function(e){
           } else {
             next.current = null;
             next.items = [];
-            next.active = 'current';
+            next.active = next.favorites?.[0]?.id || 'current';
           }
+          if (!hasTheaterRecord(next)) return null;
           return next;
         });
         return;
@@ -2363,7 +2383,7 @@ window.addEventListener('message', function(e){
 
   function renderAllStoredTheaters() {
     chatMessages().forEach((message, id) => {
-      if (getMessageRecord(message)) renderMessageTheater(id);
+      if (hasTheaterRecord(getMessageRecord(message))) renderMessageTheater(id);
     });
   }
 
