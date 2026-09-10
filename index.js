@@ -1027,7 +1027,10 @@ setTimeout(function(){
   }
 
   function ensureFab() {
-    if (!hostDocument.body || !root) return null;
+    if (!hostDocument.body || !root) {
+      console.warn('[FAB] 无法创建：body 或 root 不存在');
+      return null;
+    }
     let fab = root.querySelector(`#${FAB_ID}`);
     const detachedFab = hostDocument.getElementById(FAB_ID);
     if (!fab && detachedFab) {
@@ -1043,6 +1046,13 @@ setTimeout(function(){
       fab.setAttribute('aria-label', '小剧场设置');
       fab.innerHTML = SVG.theater;
       root.appendChild(fab);
+      console.log('[FAB] 已创建，位置:', {
+        bottom: fab.style.bottom,
+        right: fab.style.right,
+        zIndex: fab.style.zIndex,
+        display: window.getComputedStyle(fab).display,
+        visibility: window.getComputedStyle(fab).visibility
+      });
     }
 
     fab.style.position = 'fixed';
