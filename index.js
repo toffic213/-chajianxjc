@@ -76,6 +76,7 @@
   let hostEventsBound = false;
   let fabResizeBound = false;
   let fabResizeHandler = null;
+  let fabResizeWindow = null;
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -1104,6 +1105,7 @@ setTimeout(function(){
   function positionFab() {
     const fab = root?.querySelector(`#${FAB_ID}`);
     if (!fab) return;
+    const viewport = fab.ownerDocument?.defaultView || hostWindow;
     const saved = localStorage.getItem(`${STORAGE_KEY}-fab`);
     if (saved) {
       try {
@@ -1113,8 +1115,8 @@ setTimeout(function(){
         const padding = 12;
         const width = fab.offsetWidth || 48;
         const height = fab.offsetHeight || 48;
-        const maxRight = Math.max(padding, hostWindow.innerWidth - width - padding);
-        const maxBottom = Math.max(padding, hostWindow.innerHeight - height - padding);
+        const maxRight = Math.max(padding, viewport.innerWidth - width - padding);
+        const maxBottom = Math.max(padding, viewport.innerHeight - height - padding);
         if (Number.isFinite(right) || Number.isFinite(bottom)) {
           if (Number.isFinite(right)) fab.style.right = `${Math.max(padding, Math.min(maxRight, right))}px`;
           if (Number.isFinite(bottom)) fab.style.bottom = `${Math.max(padding, Math.min(maxBottom, bottom))}px`;
@@ -1124,18 +1126,35 @@ setTimeout(function(){
         }
       } catch {}
     }
+    fab.style.left = 'auto';
+    fab.style.top = 'auto';
+    const verifyPosition = () => {
+      const rect = fab.getBoundingClientRect();
+      const viewportWidth = viewport.innerWidth;
+      const viewportHeight = viewport.innerHeight;
+      const outsideViewport = rect.right <= 0 || rect.left >= viewportWidth || rect.bottom <= 0 || rect.top >= viewportHeight;
+      if (outsideViewport) {
+        fab.style.transform = 'none';
+        fab.style.right = '12px';
+        fab.style.bottom = '12px';
+        saveFabPosition(fab, 12, 12);
+      }
+    };
+    const schedule = viewport.requestAnimationFrame || ((callback) => setTimeout(callback, 0));
+    schedule(verifyPosition);
     positionPanel();
   }
 
   function saveFabPosition(fab, right, bottom) {
     const rect = fab.getBoundingClientRect();
+    const viewport = fab.ownerDocument?.defaultView || hostWindow;
     const padding = 12;
     const width = fab.offsetWidth || 48;
     const height = fab.offsetHeight || 48;
-    const maxRight = Math.max(padding, hostWindow.innerWidth - width - padding);
-    const maxBottom = Math.max(padding, hostWindow.innerHeight - height - padding);
-    const nextRight = Number.isFinite(right) ? right : hostWindow.innerWidth - rect.right;
-    const nextBottom = Number.isFinite(bottom) ? bottom : hostWindow.innerHeight - rect.bottom;
+    const maxRight = Math.max(padding, viewport.innerWidth - width - padding);
+    const maxBottom = Math.max(padding, viewport.innerHeight - height - padding);
+    const nextRight = Number.isFinite(right) ? right : viewport.innerWidth - rect.right;
+    const nextBottom = Number.isFinite(bottom) ? bottom : viewport.innerHeight - rect.bottom;
     try {
       localStorage.setItem(`${STORAGE_KEY}-fab`, JSON.stringify({
         right: Math.max(padding, Math.min(maxRight, nextRight)),
@@ -1149,17 +1168,18 @@ setTimeout(function(){
   function positionPanel() {
     const fab = root?.querySelector(`#${FAB_ID}`);
     if (!fab || !panel || panel.hidden) return;
+    const viewport = panel.ownerDocument?.defaultView || hostWindow;
     const fabRect = fab.getBoundingClientRect();
     const panelWidth = panel.offsetWidth;
     const panelHeight = panel.offsetHeight;
     if (!panelWidth || !panelHeight) return;
     const margin = 8;
     const gap = 12;
-    const maxLeft = Math.max(margin, hostWindow.innerWidth - panelWidth - margin);
+    const maxLeft = Math.max(margin, viewport.innerWidth - panelWidth - margin);
     const left = Math.min(maxLeft, Math.max(margin, fabRect.right - panelWidth));
     let top = fabRect.top - panelHeight - gap;
     if (top < margin) top = fabRect.bottom + gap;
-    top = Math.min(Math.max(margin, top), Math.max(margin, hostWindow.innerHeight - panelHeight - margin));
+    top = Math.min(Math.max(margin, top), Math.max(margin, viewport.innerHeight - panelHeight - margin));
     panel.style.left = `${Math.round(left)}px`;
     panel.style.top = `${Math.round(top)}px`;
     panel.style.right = 'auto';
@@ -1297,8 +1317,9 @@ setTimeout(function(){
         const width = fab.offsetWidth || 48;
         const height = fab.offsetHeight || 48;
         const padding = 12;
-        const maxLeft = Math.max(padding, hostWindow.innerWidth - width - padding);
-        const maxTop = Math.max(padding, hostWindow.innerHeight - height - padding);
+        const viewport = fab.ownerDocument?.defaultView || hostWindow;
+        const maxLeft = Math.max(padding, viewport.innerWidth - width - padding);
+        const maxTop = Math.max(padding, viewport.innerHeight - height - padding);
         const left = Math.max(padding, Math.min(maxLeft, startLeft + deltaX));
         const top = Math.max(padding, Math.min(maxTop, startTop + deltaY));
         currentDeltaX = left - startLeft;
@@ -1316,18 +1337,20 @@ setTimeout(function(){
           const finalLeft = startLeft + currentDeltaX;
           const finalTop = startTop + currentDeltaY;
           const padding = 12;
-          const maxLeft = Math.max(padding, hostWindow.innerWidth - width - padding);
-          const maxTop = Math.max(padding, hostWindow.innerHeight - height - padding);
+          const viewport = fab.ownerDocument?.defaultView || hostWindow;
+          const maxLeft = Math.max(padding, viewport.innerWidth - width - padding);
+          const maxTop = Math.max(padding, viewport.innerHeight - height - padding);
           const clampedLeft = Math.max(padding, Math.min(maxLeft, finalLeft));
           const clampedTop = Math.max(padding, Math.min(maxTop, finalTop));
-          const right = hostWindow.innerWidth - clampedLeft - width;
-          const bottom = hostWindow.innerHeight - clampedTop - height;
+          const right = viewport.innerWidth - clampedLeft - width;
+          const bottom = viewport.innerHeight - clampedTop - height;
           fab.style.transform = '';
           fab.style.left = 'auto';
           fab.style.top = 'auto';
           fab.style.right = `${Math.round(right)}px`;
           fab.style.bottom = `${Math.round(bottom)}px`;
           saveFabPosition(fab, right, bottom);
+          positionFab();
         } else {
           fab.style.transform = '';
         }
@@ -1358,7 +1381,10 @@ setTimeout(function(){
         positionFab();
         positionPanel();
       };
-      hostWindow.addEventListener('resize', fabResizeHandler);
+      fabResizeWindow = fab.ownerDocument?.defaultView || hostWindow;
+      fabResizeWindow.addEventListener('resize', fabResizeHandler);
+      fabResizeWindow.visualViewport?.addEventListener('resize', fabResizeHandler);
+      fabResizeWindow.visualViewport?.addEventListener('scroll', fabResizeHandler);
       fabResizeBound = true;
     }
     positionFab();
@@ -2041,8 +2067,11 @@ setTimeout(function(){
       observer = null;
       unbindHostEvents();
       if (fabResizeHandler) {
-        hostWindow.removeEventListener('resize', fabResizeHandler);
+        fabResizeWindow?.removeEventListener('resize', fabResizeHandler);
+        fabResizeWindow?.visualViewport?.removeEventListener('resize', fabResizeHandler);
+        fabResizeWindow?.visualViewport?.removeEventListener('scroll', fabResizeHandler);
         fabResizeHandler = null;
+        fabResizeWindow = null;
       }
       fabResizeBound = false;
       hostDocument.getElementById(ROOT_ID)?.remove();
