@@ -1249,14 +1249,15 @@ window.addEventListener('message', function(e){
     const favorite = (record.favorites || []).find((fav) => fav.id === favoriteId);
     if (!favorite) return;
 
-    hostDocument.querySelector('.stg-modal')?.remove();
-    const modal = hostDocument.createElement('div');
+    const oldModal = hostDocument.querySelector('dialog.stg-modal');
+    if (oldModal) {
+      if (oldModal.open) oldModal.close();
+      oldModal.remove();
+    }
+    const modal = hostDocument.createElement('dialog');
     modal.id = `stg-modal-${favoriteId}`;
     modal.className = 'stg-modal';
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
     modal.setAttribute('aria-label', favorite.title || '收藏的小剧场');
-    modal.tabIndex = -1;
 
     const box = hostDocument.createElement('div');
     box.className = 'stg-modal-dialog';
@@ -1275,12 +1276,18 @@ window.addEventListener('message', function(e){
 
     const closeModal = () => {
       hostDocument.removeEventListener('keydown', escListener);
+      if (modal.open) modal.close();
       modal.remove();
     };
     box.querySelector('[data-stg-action="close-modal"]').addEventListener('click', closeModal);
 
-    modal.addEventListener('pointerdown', (e) => {
+    modal.addEventListener('click', (e) => {
       if (e.target === modal) closeModal();
+    });
+
+    modal.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      closeModal();
     });
 
     const escListener = (e) => {
@@ -1290,6 +1297,11 @@ window.addEventListener('message', function(e){
 
     modal.appendChild(box);
     hostDocument.body.appendChild(modal);
+    if (typeof modal.showModal === 'function') {
+      modal.showModal();
+    } else {
+      modal.setAttribute('open', '');
+    }
     modal.focus({ preventScroll: true });
   }
 

@@ -463,19 +463,23 @@
   white-space: pre-wrap; overflow-wrap: anywhere; user-select: text;
 }
 
-.stg-modal {
-  position: fixed; inset: 0; z-index: 2147483647;
-  display: flex; align-items: center; justify-content: center;
-  padding: 20px; overflow: hidden; background: #000b;
+dialog.stg-modal {
+  display: block; width: min(860px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 40px));
+  max-height: calc(100vh - 40px); margin: auto; padding: 0;
+  overflow: hidden; border: 1px solid #49615f; border-radius: 12px;
+  color: var(--stg-text); background: var(--stg-panel);
+  box-shadow: 0 24px 80px #000d;
+}
+
+dialog.stg-modal::backdrop {
+  background: #000b;
   backdrop-filter: blur(5px);
 }
 
 .stg-modal-dialog {
-  display: flex; flex-direction: column;
-  width: min(860px, calc(100vw - 32px)); height: min(760px, calc(100vh - 40px));
-  max-height: calc(100vh - 40px); margin: 0;
-  overflow: hidden; border: 1px solid #49615f; border-radius: 12px;
-  background: var(--stg-panel); box-shadow: 0 24px 80px #000d;
+  display: flex; flex-direction: column; width: 100%; height: 100%;
+  overflow: hidden;
 }
 
 .stg-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--stg-line); background: var(--stg-panel-2); }
@@ -493,6 +497,5 @@
   .stg-worldbooks-list { grid-template-columns: 1fr; }
   .stg-log-summary { grid-template-columns: auto auto; }
   .stg-log-summary strong { grid-column: 1 / -1; }
-  .stg-modal { padding: 8px; }
-  .stg-modal-dialog { width: calc(100vw - 16px); height: calc(100vh - 16px); max-height: calc(100vh - 16px); }
+  dialog.stg-modal { width: calc(100vw - 16px); height: calc(100vh - 16px); max-height: calc(100vh - 16px); }
 }
