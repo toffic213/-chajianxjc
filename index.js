@@ -1289,7 +1289,7 @@ window.addEventListener('message', function(e){
     hostDocument.addEventListener('keydown', escListener);
 
     modal.appendChild(box);
-    (root || hostDocument.body).appendChild(modal);
+    hostDocument.body.appendChild(modal);
     modal.focus({ preventScroll: true });
   }
 
@@ -1491,7 +1491,7 @@ window.addEventListener('message', function(e){
       place-items: center;
       position: fixed;
       z-index: 2147483647;
-      border: 2px solid #86c8b2;
+      border: none;
       background: linear-gradient(135deg, #1a4d45, #0d2a27);
       color: #c7f3e3;
       cursor: pointer;
@@ -1502,8 +1502,8 @@ window.addEventListener('message', function(e){
       pointer-events: auto;
       touch-action: none;
       user-select: none;
-      transition: box-shadow 0.25s ease;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.125);
+      transition: transform 0.25s ease;
+      box-shadow: none;
     `;
       console.log('[FAB] 已创建，位置:', {
         bottom: fab.style.bottom,
