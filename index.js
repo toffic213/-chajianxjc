@@ -1108,11 +1108,13 @@ setTimeout(function(){
     if (saved) {
       try {
         const point = JSON.parse(saved);
-        const top = Number(point?.top);
-        const left = Number(point?.left);
-        if (Number.isFinite(top) && Number.isFinite(left)) {
-          fab.style.top = `${Math.max(8, Math.min(hostWindow.innerHeight - 60, top))}px`;
-          fab.style.left = `${Math.max(8, Math.min(hostWindow.innerWidth - 60, left))}px`;
+        const right = Number(point?.right);
+        const bottom = Number(point?.bottom);
+        if (Number.isFinite(right) && Number.isFinite(bottom)) {
+          fab.style.right = `${Math.max(12, Math.min(hostWindow.innerWidth - 60, right))}px`;
+          fab.style.bottom = `${Math.max(12, Math.min(hostWindow.innerHeight - 60, bottom))}px`;
+          fab.style.top = 'auto';
+          fab.style.left = 'auto';
           fab.style.transform = 'none';
         }
       } catch {}
@@ -1122,10 +1124,12 @@ setTimeout(function(){
 
   function saveFabPosition(fab) {
     const rect = fab.getBoundingClientRect();
+    const right = hostWindow.innerWidth - rect.right;
+    const bottom = hostWindow.innerHeight - rect.bottom;
     try {
       localStorage.setItem(`${STORAGE_KEY}-fab`, JSON.stringify({
-        top: Math.max(8, Math.min(hostWindow.innerHeight - 60, rect.top)),
-        left: Math.max(8, Math.min(hostWindow.innerWidth - 60, rect.left))
+        right: Math.max(12, Math.min(hostWindow.innerWidth - 60, right)),
+        bottom: Math.max(12, Math.min(hostWindow.innerHeight - 60, bottom))
       }));
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] FAB position save failed`, error);
