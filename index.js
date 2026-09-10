@@ -1110,9 +1110,14 @@ setTimeout(function(){
         const point = JSON.parse(saved);
         const right = Number(point?.right);
         const bottom = Number(point?.bottom);
-        if (Number.isFinite(right) && Number.isFinite(bottom)) {
-          fab.style.right = `${Math.max(12, Math.min(hostWindow.innerWidth - 60, right))}px`;
-          fab.style.bottom = `${Math.max(12, Math.min(hostWindow.innerHeight - 60, bottom))}px`;
+        const padding = 12;
+        const width = fab.offsetWidth || 48;
+        const height = fab.offsetHeight || 48;
+        const maxRight = Math.max(padding, hostWindow.innerWidth - width - padding);
+        const maxBottom = Math.max(padding, hostWindow.innerHeight - height - padding);
+        if (Number.isFinite(right) || Number.isFinite(bottom)) {
+          if (Number.isFinite(right)) fab.style.right = `${Math.max(padding, Math.min(maxRight, right))}px`;
+          if (Number.isFinite(bottom)) fab.style.bottom = `${Math.max(padding, Math.min(maxBottom, bottom))}px`;
           fab.style.top = 'auto';
           fab.style.left = 'auto';
           fab.style.transform = 'none';
@@ -1122,14 +1127,19 @@ setTimeout(function(){
     positionPanel();
   }
 
-  function saveFabPosition(fab) {
+  function saveFabPosition(fab, right, bottom) {
     const rect = fab.getBoundingClientRect();
-    const right = hostWindow.innerWidth - rect.right;
-    const bottom = hostWindow.innerHeight - rect.bottom;
+    const padding = 12;
+    const width = fab.offsetWidth || 48;
+    const height = fab.offsetHeight || 48;
+    const maxRight = Math.max(padding, hostWindow.innerWidth - width - padding);
+    const maxBottom = Math.max(padding, hostWindow.innerHeight - height - padding);
+    const nextRight = Number.isFinite(right) ? right : hostWindow.innerWidth - rect.right;
+    const nextBottom = Number.isFinite(bottom) ? bottom : hostWindow.innerHeight - rect.bottom;
     try {
       localStorage.setItem(`${STORAGE_KEY}-fab`, JSON.stringify({
-        right: Math.max(12, Math.min(hostWindow.innerWidth - 60, right)),
-        bottom: Math.max(12, Math.min(hostWindow.innerHeight - 60, bottom))
+        right: Math.max(padding, Math.min(maxRight, nextRight)),
+        bottom: Math.max(padding, Math.min(maxBottom, nextBottom))
       }));
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] FAB position save failed`, error);
@@ -1184,11 +1194,6 @@ setTimeout(function(){
       align-items: center;
       justify-content: center;
       position: fixed;
-      top: calc(50% - 22px);
-      left: calc(50% - 22px);
-      
-      
-      
       z-index: 2147483647;
       width: 44px;
       height: 44px;
@@ -1206,7 +1211,7 @@ setTimeout(function(){
       pointer-events: auto;
       touch-action: none;
       user-select: none;
-      transition: transform 0.25s ease;
+      transition: box-shadow 0.25s ease;
       box-shadow: 0 8px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.125);
     `;
       console.log('[FAB] 已创建，位置:', {
@@ -1277,6 +1282,7 @@ setTimeout(function(){
         suppressClick = false;
         currentDeltaX = 0;
         currentDeltaY = 0;
+        fab.style.transition = 'none';
         fab.setPointerCapture?.(event.pointerId);
       });
 
@@ -1291,8 +1297,10 @@ setTimeout(function(){
         const width = fab.offsetWidth || 48;
         const height = fab.offsetHeight || 48;
         const padding = 12;
-        const left = Math.max(padding - width, Math.min(hostWindow.innerWidth - padding, startLeft + deltaX));
-        const top = Math.max(padding - height, Math.min(hostWindow.innerHeight - padding, startTop + deltaY));
+        const maxLeft = Math.max(padding, hostWindow.innerWidth - width - padding);
+        const maxTop = Math.max(padding, hostWindow.innerHeight - height - padding);
+        const left = Math.max(padding, Math.min(maxLeft, startLeft + deltaX));
+        const top = Math.max(padding, Math.min(maxTop, startTop + deltaY));
         currentDeltaX = left - startLeft;
         currentDeltaY = top - startTop;
         fab.style.transform = `translate3d(${currentDeltaX}px, ${currentDeltaY}px, 0)`;
@@ -1308,20 +1316,23 @@ setTimeout(function(){
           const finalLeft = startLeft + currentDeltaX;
           const finalTop = startTop + currentDeltaY;
           const padding = 12;
-          const clampedLeft = Math.max(padding - width, Math.min(hostWindow.innerWidth - padding, finalLeft));
-          const clampedTop = Math.max(padding - height, Math.min(hostWindow.innerHeight - padding, finalTop));
-          const right = Math.max(padding, hostWindow.innerWidth - clampedLeft - width);
-          const bottom = Math.max(padding, hostWindow.innerHeight - clampedTop - height);
+          const maxLeft = Math.max(padding, hostWindow.innerWidth - width - padding);
+          const maxTop = Math.max(padding, hostWindow.innerHeight - height - padding);
+          const clampedLeft = Math.max(padding, Math.min(maxLeft, finalLeft));
+          const clampedTop = Math.max(padding, Math.min(maxTop, finalTop));
+          const right = hostWindow.innerWidth - clampedLeft - width;
+          const bottom = hostWindow.innerHeight - clampedTop - height;
           fab.style.transform = '';
           fab.style.left = 'auto';
           fab.style.top = 'auto';
           fab.style.right = `${Math.round(right)}px`;
           fab.style.bottom = `${Math.round(bottom)}px`;
-          saveFabPosition(fab);
+          saveFabPosition(fab, right, bottom);
         } else {
           fab.style.transform = '';
         }
         fab.releasePointerCapture?.(event.pointerId);
+        fab.style.transition = 'box-shadow 0.25s ease';
         pointerId = null;
         moved = false;
         suppressClick = event.type === 'pointerup' && wasMoved;
