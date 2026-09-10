@@ -1200,7 +1200,12 @@ setTimeout(function(){
     link.rel = 'stylesheet';
     link.href = href;
     link.dataset.stageTheater = 'true';
-    hostDocument.head?.appendChild(link);
+    if (hostDocument.head) {
+      hostDocument.head.appendChild(link);
+      alert(`CSS 已加载: ${href}`);
+    } else {
+      alert(`手机端错误：head 不存在`);
+    }
   }
 
   function togglePanel(show) {
