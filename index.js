@@ -752,7 +752,10 @@ setTimeout(function(){
   }
 
   function mountUI() {
-    if (!hostDocument.body) return false;
+    if (!hostDocument.body) {
+      alert('手机端初始化失败：body 不存在');
+      return false;
+    }
     if (hostDocument.getElementById(ROOT_ID)) {
       root = hostDocument.getElementById(ROOT_ID);
       panel = root.querySelector('.stg-panel');
@@ -779,6 +782,7 @@ setTimeout(function(){
       <input type="file" accept="application/json" data-stg-import hidden>
       <input type="file" accept="image/png,image/jpeg,image/webp" data-stg-fab-image-upload hidden>`;
     hostDocument.body.appendChild(root);
+    alert('手机端：UI 已挂载到 DOM');
     panel = root.querySelector('.stg-panel');
     bindHostEvents();
     renderTab('general');
