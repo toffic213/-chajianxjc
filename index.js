@@ -1106,60 +1106,50 @@ setTimeout(function(){
     const fab = root?.querySelector(`#${FAB_ID}`);
     if (!fab) return;
     const viewport = fab.ownerDocument?.defaultView || hostWindow;
+    const padding = 12;
+    const width = fab.offsetWidth || 48;
+    const height = fab.offsetHeight || 48;
+
+    // 尝试恢复保存的位置
     const saved = localStorage.getItem(`${STORAGE_KEY}-fab`);
     if (saved) {
       try {
         const point = JSON.parse(saved);
         const right = Number(point?.right);
         const bottom = Number(point?.bottom);
-        const padding = 12;
-        const width = fab.offsetWidth || 48;
-        const height = fab.offsetHeight || 48;
-        const maxRight = Math.max(padding, viewport.innerWidth - width - padding);
-        const maxBottom = Math.max(padding, viewport.innerHeight - height - padding);
-        if (Number.isFinite(right) || Number.isFinite(bottom)) {
-          if (Number.isFinite(right)) fab.style.right = `${Math.max(padding, Math.min(maxRight, right))}px`;
-          if (Number.isFinite(bottom)) fab.style.bottom = `${Math.max(padding, Math.min(maxBottom, bottom))}px`;
+
+        // 验证和约束保存的位置
+        if (Number.isFinite(right) && Number.isFinite(bottom)) {
+          const maxRight = viewport.innerWidth - width - padding;
+          const maxBottom = viewport.innerHeight - height - padding;
+          const constrainedRight = Math.max(padding, Math.min(maxRight, right));
+          const constrainedBottom = Math.max(padding, Math.min(maxBottom, bottom));
+
+          fab.style.right = `${constrainedRight}px`;
+          fab.style.bottom = `${constrainedBottom}px`;
           fab.style.top = 'auto';
           fab.style.left = 'auto';
           fab.style.transform = 'none';
+          positionPanel();
+          return;
         }
       } catch {}
     }
-    fab.style.left = 'auto';
+
+    // 没有保存位置，则居中显示
+    const centerRight = (viewport.innerWidth - width) / 2;
+    const centerBottom = (viewport.innerHeight - height) / 2;
+    fab.style.right = `${Math.round(centerRight)}px`;
+    fab.style.bottom = `${Math.round(centerBottom)}px`;
     fab.style.top = 'auto';
-    const verifyPosition = () => {
-      const rect = fab.getBoundingClientRect();
-      const viewportWidth = viewport.innerWidth;
-      const viewportHeight = viewport.innerHeight;
-      const outsideViewport = rect.right <= 0 || rect.left >= viewportWidth || rect.bottom <= 0 || rect.top >= viewportHeight;
-      if (outsideViewport) {
-        fab.style.transform = 'none';
-        fab.style.right = '12px';
-        fab.style.bottom = '12px';
-        saveFabPosition(fab, 12, 12);
-      }
-    };
-    const schedule = viewport.requestAnimationFrame || ((callback) => setTimeout(callback, 0));
-    schedule(verifyPosition);
+    fab.style.left = 'auto';
+    fab.style.transform = 'none';
     positionPanel();
   }
 
   function saveFabPosition(fab, right, bottom) {
-    const rect = fab.getBoundingClientRect();
-    const viewport = fab.ownerDocument?.defaultView || hostWindow;
-    const padding = 12;
-    const width = fab.offsetWidth || 48;
-    const height = fab.offsetHeight || 48;
-    const maxRight = Math.max(padding, viewport.innerWidth - width - padding);
-    const maxBottom = Math.max(padding, viewport.innerHeight - height - padding);
-    const nextRight = Number.isFinite(right) ? right : viewport.innerWidth - rect.right;
-    const nextBottom = Number.isFinite(bottom) ? bottom : viewport.innerHeight - rect.bottom;
     try {
-      localStorage.setItem(`${STORAGE_KEY}-fab`, JSON.stringify({
-        right: Math.max(padding, Math.min(maxRight, nextRight)),
-        bottom: Math.max(padding, Math.min(maxBottom, nextBottom))
-      }));
+      localStorage.setItem(`${STORAGE_KEY}-fab`, JSON.stringify({ right, bottom }));
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] FAB position save failed`, error);
     }
@@ -1210,20 +1200,14 @@ setTimeout(function(){
 
     // 立刻给 FAB 加 inline style（不管是否新建）
     fab.style.cssText = `
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: grid;
+      place-items: center;
       position: fixed;
       z-index: 2147483647;
-      width: 44px;
-      height: 44px;
       border: 2px solid #86c8b2;
-      border-radius: 50%;
       background: linear-gradient(135deg, #1a4d45, #0d2a27);
       color: #c7f3e3;
       cursor: pointer;
-      display: grid;
-      place-items: center;
       font-size: 20px;
       padding: 0;
       opacity: 1;
@@ -1243,8 +1227,6 @@ setTimeout(function(){
       });
 
     fab.style.position = 'fixed';
-    fab.style.right = '22px';
-    fab.style.bottom = '22px';
     fab.style.zIndex = '2147483647';
     fab.style.display = 'grid';
     fab.style.visibility = 'visible';
@@ -1334,16 +1316,15 @@ setTimeout(function(){
         if (moved) {
           const width = fab.offsetWidth || 48;
           const height = fab.offsetHeight || 48;
-          const finalLeft = startLeft + currentDeltaX;
-          const finalTop = startTop + currentDeltaY;
           const padding = 12;
           const viewport = fab.ownerDocument?.defaultView || hostWindow;
-          const maxLeft = Math.max(padding, viewport.innerWidth - width - padding);
-          const maxTop = Math.max(padding, viewport.innerHeight - height - padding);
-          const clampedLeft = Math.max(padding, Math.min(maxLeft, finalLeft));
-          const clampedTop = Math.max(padding, Math.min(maxTop, finalTop));
-          const right = viewport.innerWidth - clampedLeft - width;
-          const bottom = viewport.innerHeight - clampedTop - height;
+          const rect = fab.getBoundingClientRect();
+          const finalLeft = rect.left;
+          const finalTop = rect.top;
+          const constrainLeft = Math.max(padding, Math.min(viewport.innerWidth - width - padding, finalLeft));
+          const constrainTop = Math.max(padding, Math.min(viewport.innerHeight - height - padding, finalTop));
+          const right = viewport.innerWidth - constrainLeft - width;
+          const bottom = viewport.innerHeight - constrainTop - height;
           fab.style.transform = '';
           fab.style.left = 'auto';
           fab.style.top = 'auto';
