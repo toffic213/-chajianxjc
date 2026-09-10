@@ -781,7 +781,7 @@ setTimeout(function(){
       </aside>
       <input type="file" accept="application/json" data-stg-import hidden>
       <input type="file" accept="image/png,image/jpeg,image/webp" data-stg-fab-image-upload hidden>`;
-    hostDocument.body.appendChild(root);
+    document.body.appendChild(root);
     alert('手机端：UI 已挂载到 DOM');
     panel = root.querySelector('.stg-panel');
     bindHostEvents();
