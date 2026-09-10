@@ -666,23 +666,37 @@
     iframe.setAttribute('data-stg-frame-id', frameId);
 
     iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent;color:#eef2f5;font:15px/1.7 system-ui,sans-serif;overflow-wrap:anywhere}body{padding:16px}a{color:#8fc9ff}img{max-width:100%;height:auto}pre{white-space:pre-wrap;background:#111923;padding:10px;border-radius:6px}blockquote{margin:0;padding:8px 12px;border-left:3px solid #8fc9ff;background:#ffffff0d}</style></head><body>${safeHtml(text)}<script>
+var frameId='${frameId}';
 setTimeout(function(){
   var h=document.body.scrollHeight;
-  window.parent.postMessage({type:'stg-frame-height',frameId:'${frameId}',height:h},'*');
+  window.parent.postMessage({type:'stg-frame-height',frameId:frameId,height:h},'*');
 }, 100);
+window.addEventListener('message', function(e){
+  if(e.data && e.data.type==='stg-insert-image' && e.data.frameId===frameId && e.data.imageHtml){
+    var container=document.createElement('div');
+    container.innerHTML=e.data.imageHtml;
+    document.body.appendChild(container);
+    setTimeout(function(){
+      var h=document.body.scrollHeight;
+      window.parent.postMessage({type:'stg-frame-height',frameId:frameId,height:h},'*');
+    }, 200);
+  }
+});
 </script></body></html>`;
 
-    // 为这个iframe添加唯一的message监听器，一次性使用
     let heightSet = false;
     const handleMessage = (e) => {
       if (!heightSet && e.data?.type === 'stg-frame-height' && e.data?.frameId === frameId && typeof e.data.height === 'number') {
         heightSet = true;
         iframe.style.minHeight = Math.max(180, e.data.height + 32) + 'px';
-        hostWindow.removeEventListener('message', handleMessage);
+      }
+      if (e.data?.type === 'stg-frame-height' && e.data?.frameId === frameId) {
+        iframe.style.minHeight = Math.max(180, e.data.height + 32) + 'px';
       }
     };
 
     hostWindow.addEventListener('message', handleMessage);
+    iframe.dataset.stgFrameId = frameId;
     return iframe;
   }
 
@@ -2201,6 +2215,24 @@ setTimeout(function(){
   }
 
   const instance = {
+    insertImage: (imageTokens, imageHtml) => {
+      const theaters = hostDocument.querySelectorAll('.stg-message-theater');
+      for (const theater of theaters) {
+        if (theater.dataset.stgImageTokens && theater.dataset.stgImageTokens.includes(imageTokens)) {
+          const iframe = theater.querySelector('iframe[data-stg-frame-id]');
+          if (iframe) {
+            const frameId = iframe.dataset.stgFrameId;
+            iframe.contentWindow.postMessage({
+              type: 'stg-insert-image',
+              frameId: frameId,
+              imageHtml: imageHtml
+            }, '*');
+          }
+          return true;
+        }
+      }
+      return false;
+    },
     destroy: () => {
       clearTimeout(mutationObserverTimer);
       mutationObserverTimer = null;
