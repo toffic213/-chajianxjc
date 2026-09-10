@@ -30,6 +30,10 @@ data/<用户名>/extensions/stage-theater/
 - 小剧场窗口位于对应 AI 消息下方，支持 HTML、内联 CSS、基础 JavaScript 沙盒渲染、折叠、重新生成、收藏、切换收藏、编辑和删除。
 - API 档案、提示词库和插件全局设置同时保存到 `localStorage` 与酒馆扩展设置。
 
+## 生图插件桥接
+
+小剧场支持在正文任意位置放置多个 `image###提示词###` 标记。插件会将标记提取到外层 DOM，并把对应位置转换为图片占位槽。生图插件可监听 `stage-theater:image-prompts` 事件获取 `event.detail.prompts`，也可调用 `window.stageTheaterImageBridge.getImagePrompts()` 主动读取。生成完成后调用 `window.stageTheaterImageBridge.insertImage(完整标记或提示词或slotId, 图片URL或HTML)`；图片会回填原位置并随小剧场记录保存。批量回填可调用 `insertImages([{ token, url }])`。
+
 ## 兼容性说明
 
 插件按底稿约定使用 `SillyTavern.getContext()`、`ctx.chat`、酒馆事件、`ctx.chatMetadata.extensions.stage-theater` 和 `ctx.saveChat()`；同时对 TavernHelper 的角色卡与世界书读取接口做了可选兼容。若运行环境未提供相应接口，插件会保留可用功能并在控制台输出警告。

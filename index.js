@@ -8,6 +8,7 @@
   const LOG_STORAGE_KEY = 'stage-theater-logs-v1';
   const MAX_LOGS = 100;
   const MAX_LOG_STORAGE_CHARS = 1500000;
+  const IMAGE_PROMPT_PATTERN = /image###([\s\S]{1,4000}?)###/gi;
   const MESSAGE_KEY = PLUGIN_ID;
   const INSTANCE_KEY = '__stageTheaterInstance';
   const STYLE_LINK_ID = 'stage-theater-style-link';
@@ -729,7 +730,38 @@
       .replace(/\n/g, '<br>');
   }
 
-  function frameFor(text) {
+  function extractImagePrompts(text) {
+    const prompts = [];
+    const source = String(text || '');
+    for (const match of source.matchAll(new RegExp(IMAGE_PROMPT_PATTERN.source, IMAGE_PROMPT_PATTERN.flags))) {
+      const prompt = String(match[1] || '').trim();
+      if (!prompt) continue;
+      prompts.push({
+        raw: match[0],
+        prompt,
+        occurrence: prompts.length,
+        sourceIndex: match.index
+      });
+    }
+    return prompts;
+  }
+
+  function imageOutputHtml(output) {
+    if (Array.isArray(output)) return output.map(imageOutputHtml).filter(Boolean).join('');
+    if (typeof output === 'string') {
+      const value = output.trim();
+      if (/^(?:https?:|data:image\/|blob:)/i.test(value)) return `<img src="${escapeAttr(value)}" alt="小剧场插图">`;
+      return value;
+    }
+    if (!output || typeof output !== 'object') return '';
+    if (typeof output.outerHTML === 'string') return output.outerHTML;
+    if (typeof output.imageHtml === 'string') return imageOutputHtml(output.imageHtml);
+    if (typeof output.html === 'string') return imageOutputHtml(output.html);
+    const source = output.url || output.src || output.imageUrl || output.dataUrl;
+    return typeof source === 'string' ? imageOutputHtml(source) : '';
+  }
+
+  function frameFor(text, options = {}) {
     const frameId = `stg-frame-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const iframe = hostDocument.createElement('iframe');
     iframe.className = 'stg-theater-frame';
@@ -737,21 +769,41 @@
     iframe.setAttribute('title', '小剧场内容');
     iframe.setAttribute('data-stg-frame-id', frameId);
 
-    iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent;color:#eef2f5;font:15px/1.7 system-ui,sans-serif;overflow-wrap:anywhere}body{padding:16px}a{color:#8fc9ff}img{max-width:100%;height:auto}pre{white-space:pre-wrap;background:#111923;padding:10px;border-radius:6px}blockquote{margin:0;padding:8px 12px;border-left:3px solid #8fc9ff;background:#ffffff0d}</style></head><body>${safeHtml(text)}<script>
+    const prompts = extractImagePrompts(text).map((entry, index) => ({
+      ...entry,
+      slotId: `${frameId}-image-${index}`,
+      storageKey: `${entry.raw}::${entry.occurrence}`,
+      frameId,
+      messageId: Number.isFinite(Number(options.messageId)) ? Number(options.messageId) : null,
+      itemId: options.itemId || ''
+    }));
+    const generatedImages = options.generatedImages && typeof options.generatedImages === 'object' ? options.generatedImages : {};
+    let promptIndex = 0;
+    const renderedContent = safeHtml(text).replace(new RegExp(IMAGE_PROMPT_PATTERN.source, IMAGE_PROMPT_PATTERN.flags), () => {
+      const entry = prompts[promptIndex];
+      promptIndex += 1;
+      if (!entry) return '';
+      const savedImage = imageOutputHtml(generatedImages[entry.storageKey] || generatedImages[entry.raw] || generatedImages[entry.prompt]);
+      return `<span id="${entry.slotId}" class="stg-image-slot${savedImage ? ' has-image' : ''}" data-stg-image-slot="${entry.slotId}">${savedImage || `<span class="stg-image-placeholder">等待生图 · ${escapeHtml(entry.prompt)}</span>`}</span>`;
+    });
+
+    iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent;color:#eef2f5;font:15px/1.7 system-ui,sans-serif;overflow-wrap:anywhere}body{padding:16px}a{color:#8fc9ff}img{max-width:100%;height:auto}pre{white-space:pre-wrap;background:#111923;padding:10px;border-radius:6px}blockquote{margin:0;padding:8px 12px;border-left:3px solid #8fc9ff;background:#ffffff0d}.stg-image-slot{display:block;margin:12px 0;max-width:100%}.stg-image-slot.has-image{padding:0;background:transparent}.stg-image-slot img{display:block;max-width:100%;height:auto;margin:auto;border-radius:8px}.stg-image-placeholder{display:block;padding:14px;border:1px dashed #4f6f69;border-radius:8px;color:#9fc9bd;background:#10201d;text-align:center;font-size:12px}</style></head><body>${renderedContent}<script>
 var frameId='${frameId}';
-setTimeout(function(){
+function reportHeight(){
   var h=document.body.scrollHeight;
   window.parent.postMessage({type:'stg-frame-height',frameId:frameId,height:h},'*');
-}, 100);
+}
+setTimeout(reportHeight,100);
 window.addEventListener('message', function(e){
   if(e.data && e.data.type==='stg-insert-image' && e.data.frameId===frameId && e.data.imageHtml){
-    var container=document.createElement('div');
-    container.innerHTML=e.data.imageHtml;
-    document.body.appendChild(container);
-    setTimeout(function(){
-      var h=document.body.scrollHeight;
-      window.parent.postMessage({type:'stg-frame-height',frameId:frameId,height:h},'*');
-    }, 200);
+    var selected=e.data.slotId ? document.getElementById(e.data.slotId) : null;
+    var slots=selected ? [selected] : document.querySelectorAll('.stg-image-slot');
+    slots.forEach(function(slot){
+      slot.innerHTML=e.data.imageHtml;
+      slot.classList.add('has-image');
+      slot.querySelectorAll('img').forEach(function(img){img.addEventListener('load',reportHeight,{once:true});});
+    });
+    setTimeout(reportHeight,200);
   }
 });
 </script></body></html>`;
@@ -769,7 +821,40 @@ window.addEventListener('message', function(e){
 
     hostWindow.addEventListener('message', handleMessage);
     iframe.dataset.stgFrameId = frameId;
+    iframe.stgImagePrompts = prompts;
     return iframe;
+  }
+
+  function publishImagePrompts(container, iframe) {
+    const prompts = iframe?.stgImagePrompts || [];
+    container.querySelector('.stg-image-bridge')?.remove();
+    if (!prompts.length) {
+      delete container.dataset.stgImageTokens;
+      delete container.dataset.stgImagePrompts;
+      return;
+    }
+
+    container.dataset.stgImageTokens = prompts.map((entry) => entry.raw).join('\n');
+    container.dataset.stgImagePrompts = JSON.stringify(prompts.map(({ raw, prompt, occurrence, slotId, storageKey, frameId, messageId, itemId }) => ({ raw, prompt, occurrence, slotId, storageKey, frameId, messageId, itemId })));
+    const bridge = hostDocument.createElement('div');
+    bridge.className = 'stg-image-bridge';
+    bridge.setAttribute('aria-hidden', 'true');
+    prompts.forEach((entry) => {
+      const token = hostDocument.createElement('span');
+      token.className = 'stg-image-prompt-token';
+      token.dataset.stgImageToken = entry.raw;
+      token.dataset.stgImagePrompt = entry.prompt;
+      token.dataset.stgImageSlot = entry.slotId;
+      token.textContent = entry.raw;
+      bridge.appendChild(token);
+    });
+    container.appendChild(bridge);
+
+    const detail = { source: PLUGIN_ID, container, iframe, prompts: prompts.map((entry) => ({ ...entry })) };
+    setTimeout(() => {
+      hostDocument.dispatchEvent(new hostWindow.CustomEvent('stage-theater:image-prompts', { detail }));
+      hostWindow.dispatchEvent(new hostWindow.CustomEvent('stage-theater:image-prompts', { detail }));
+    }, 0);
   }
 
   function button(action, label, icon, extra = '', style = '') {
@@ -859,14 +944,13 @@ window.addEventListener('message', function(e){
     const content = box.querySelector('.stg-theater-content');
     content.innerHTML = '';  // 清空旧内容
     if (item) {
-      content.appendChild(frameFor(item.content));
-      // 提取生图词到外层供插件读取
-      const imageTokens = (item.content.match(/image###[^#\s]+###[^#\s]+/g) || []).join(' ');
-      if (imageTokens) {
-        box.dataset.stgImageTokens = imageTokens;
-      } else {
-        delete box.dataset.stgImageTokens;
-      }
+      const iframe = frameFor(item.content, {
+        messageId,
+        itemId: item.id,
+        generatedImages: item.generatedImages
+      });
+      content.appendChild(iframe);
+      publishImagePrompts(box, iframe);
     }
     const editor = box.querySelector('[data-stg-field="edit-content"]');
     if (editor) editor.value = item?.content || '';
@@ -1245,13 +1329,13 @@ window.addEventListener('message', function(e){
     return `<div class="stg-section"><div style="display:grid;gap:10px">${rows}</div></div>`;
   }
 
-  function showFavoriteModal(favoriteId, record) {
+  function showFavoriteModal(favoriteId, record, messageId) {
     const favorite = (record.favorites || []).find((fav) => fav.id === favoriteId);
     if (!favorite) return;
 
-    const oldModal = hostDocument.querySelector('dialog.stg-modal');
+    const oldModal = hostDocument.querySelector('.stg-modal');
     if (oldModal) {
-      if (oldModal.open) oldModal.close();
+      if (oldModal.open && typeof oldModal.close === 'function') oldModal.close();
       oldModal.remove();
     }
     const modal = hostDocument.createElement('dialog');
@@ -1271,8 +1355,13 @@ window.addEventListener('message', function(e){
     `;
 
     const content = box.querySelector('.stg-modal-content');
-    const iframe = frameFor(favorite.content);
+    const iframe = frameFor(favorite.content, {
+      messageId,
+      itemId: favorite.id,
+      generatedImages: favorite.generatedImages
+    });
     content.appendChild(iframe);
+    publishImagePrompts(modal, iframe);
 
     const closeModal = () => {
       hostDocument.removeEventListener('keydown', escListener);
@@ -2075,7 +2164,7 @@ window.addEventListener('message', function(e){
         if (record && favoriteId) {
           record.active = favoriteId;
           await saveMessageRecord(message, record);
-          showFavoriteModal(favoriteId, record);
+          showFavoriteModal(favoriteId, record, messageId);
         }
       }
       return;
@@ -2418,25 +2507,70 @@ window.addEventListener('message', function(e){
     }
   }
 
+  function currentImagePrompts() {
+    return Array.from(hostDocument.querySelectorAll('iframe[data-stg-frame-id]')).flatMap((iframe) =>
+      (iframe.stgImagePrompts || []).map((entry) => ({ ...entry }))
+    );
+  }
+
+  function rememberGeneratedImage(entry, imageHtml) {
+    if (!Number.isFinite(Number(entry.messageId)) || !entry.itemId) return;
+    const message = getMessage(Number(entry.messageId));
+    const record = getMessageRecord(message);
+    if (!record) return;
+    const candidates = [record.current, ...(record.items || []), ...(record.favorites || [])].filter(Boolean);
+    let changed = false;
+    for (const item of candidates) {
+      if (item.id !== entry.itemId) continue;
+      item.generatedImages ||= {};
+      item.generatedImages[entry.storageKey || entry.raw] = imageHtml;
+      changed = true;
+    }
+    if (changed) saveMessageRecord(message, record);
+  }
+
+  function insertGeneratedImage(reference, output) {
+    if (Array.isArray(reference)) {
+      return reference.reduce((count, item, index) => count + insertGeneratedImage(item, Array.isArray(output) ? output[index] : output), 0);
+    }
+
+    let lookup = reference;
+    let image = output;
+    if (reference && typeof reference === 'object') {
+      lookup = reference.slotId || reference.imageToken || reference.imageTokens || reference.token || reference.raw || reference.prompt || reference.tag || '';
+      image = output ?? reference.imageHtml ?? reference.html ?? reference.url ?? reference.src ?? reference.imageUrl ?? reference.dataUrl;
+    }
+    const lookupText = String(lookup || '').trim();
+    const html = imageOutputHtml(image);
+    if (!lookupText || !html) return 0;
+
+    const prompts = currentImagePrompts();
+    let matches = prompts.filter((entry) =>
+      entry.slotId === lookupText || entry.raw === lookupText || entry.prompt === lookupText
+    );
+    if (!matches.length) {
+      matches = prompts.filter((entry) => lookupText.includes(entry.raw));
+    }
+
+    for (const entry of matches) {
+      const iframe = hostDocument.querySelector(`iframe[data-stg-frame-id="${CSS.escape(entry.frameId)}"]`);
+      iframe?.contentWindow?.postMessage({
+        type: 'stg-insert-image',
+        frameId: entry.frameId,
+        slotId: entry.slotId,
+        imageHtml: html
+      }, '*');
+      rememberGeneratedImage(entry, html);
+    }
+    if (matches.length) addLog(`小剧场插图已回填 · ${matches.length} 处`, 'success', lookupText, '查看生图标记');
+    return matches.length;
+  }
+
   const instance = {
-    insertImage: (imageTokens, imageHtml) => {
-      const theaters = hostDocument.querySelectorAll('.stg-message-theater');
-      for (const theater of theaters) {
-        if (theater.dataset.stgImageTokens && theater.dataset.stgImageTokens.includes(imageTokens)) {
-          const iframe = theater.querySelector('iframe[data-stg-frame-id]');
-          if (iframe) {
-            const frameId = iframe.dataset.stgFrameId;
-            iframe.contentWindow.postMessage({
-              type: 'stg-insert-image',
-              frameId: frameId,
-              imageHtml: imageHtml
-            }, '*');
-          }
-          return true;
-        }
-      }
-      return false;
-    },
+    getImagePrompts: currentImagePrompts,
+    extractImagePrompts,
+    insertImage: (imageTokens, imageHtml) => insertGeneratedImage(imageTokens, imageHtml) > 0,
+    insertImages: (items) => insertGeneratedImage(items),
     destroy: () => {
       clearTimeout(mutationObserverTimer);
       mutationObserverTimer = null;
@@ -2454,10 +2588,32 @@ window.addEventListener('message', function(e){
       hostDocument.getElementById(ROOT_ID)?.remove();
       hostDocument.getElementById(FAB_ID)?.remove();
       hostDocument.getElementById(STYLE_LINK_ID)?.remove();
+      hostDocument.querySelectorAll('.stg-modal').forEach((modal) => {
+        if (modal.open && typeof modal.close === 'function') modal.close();
+        modal.remove();
+      });
+      hostDocument.removeEventListener('stage-theater:image-ready', handleImageReady);
+      hostDocument.removeEventListener('stg-image-ready', handleImageReady);
+      hostWindow.removeEventListener('message', handleImageMessage);
       if (hostWindow[INSTANCE_KEY] === instance) delete hostWindow[INSTANCE_KEY];
+      if (hostWindow.stageTheaterImageBridge === instance) delete hostWindow.stageTheaterImageBridge;
     }
   };
+
+  function handleImageReady(event) {
+    insertGeneratedImage(event.detail, event.detail?.imageHtml ?? event.detail?.html ?? event.detail?.url);
+  }
+
+  function handleImageMessage(event) {
+    if (!['stage-theater:image-ready', 'stg-image-ready'].includes(event.data?.type)) return;
+    insertGeneratedImage(event.data, event.data.imageHtml ?? event.data.html ?? event.data.url);
+  }
+
+  hostDocument.addEventListener('stage-theater:image-ready', handleImageReady);
+  hostDocument.addEventListener('stg-image-ready', handleImageReady);
+  hostWindow.addEventListener('message', handleImageMessage);
   hostWindow[INSTANCE_KEY] = instance;
+  hostWindow.stageTheaterImageBridge = instance;
   hostWindow.addEventListener('pagehide', () => {
     if (hostWindow[INSTANCE_KEY] === instance) instance.destroy();
   }, { once: true });

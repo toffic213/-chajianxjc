@@ -383,6 +383,16 @@
 
 .stg-text-button:disabled { opacity: .45; cursor: wait; pointer-events: none; }
 
+.stg-image-bridge {
+  position: absolute !important; left: 0 !important; top: 0 !important;
+  width: 1px !important; height: 1px !important; padding: 0 !important;
+  overflow: hidden !important; opacity: .001 !important;
+  clip-path: inset(50%) !important; pointer-events: none !important;
+  white-space: pre !important;
+}
+
+.stg-image-prompt-token { display: block !important; }
+
 .stg-theater-content { min-height: 90px; }
 
 .stg-theater-frame { display: block; width: 100%; min-height: 180px; border: 0; background: transparent; }
@@ -464,8 +474,8 @@
 }
 
 dialog.stg-modal {
-  display: block; width: min(860px, calc(100vw - 32px));
-  height: min(760px, calc(100vh - 40px));
+  display: block; width: min(780px, calc(100vw - 40px));
+  height: min(680px, calc(100vh - 56px));
   max-height: calc(100vh - 40px); margin: auto; padding: 0;
   overflow: hidden; border: 1px solid #49615f; border-radius: 12px;
   color: var(--stg-text); background: var(--stg-panel);
@@ -497,5 +507,5 @@ dialog.stg-modal::backdrop {
   .stg-worldbooks-list { grid-template-columns: 1fr; }
   .stg-log-summary { grid-template-columns: auto auto; }
   .stg-log-summary strong { grid-column: 1 / -1; }
-  dialog.stg-modal { width: calc(100vw - 16px); height: calc(100vh - 16px); max-height: calc(100vh - 16px); }
+  dialog.stg-modal { width: calc(100vw - 24px); height: calc(100vh - 24px); max-height: calc(100vh - 24px); }
 }
