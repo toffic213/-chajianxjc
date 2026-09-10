@@ -60,7 +60,6 @@
       name: '小剧场默认提示词',
       content: '请根据提供的角色卡设定、聊天上下文和最新 AI 回复，生成一段独立的小剧场。保留角色性格和世界观，不替用户做决定。输出适合直接作为 HTML 内容显示的小剧场正文，可使用基础 HTML 标签、内联样式和必要的基础 JavaScript；不要输出 Markdown 代码围栏。若存在多个小剧场要求，请清晰分区并分别美化。',
       enabled: true,
-      selected: true,
       category: '默认',
       order: 0,
       note: ''
@@ -274,7 +273,7 @@
       return selected.sort((a, b) => Number(a.order) - Number(b.order));
     }
     return settings.prompts
-      .filter((prompt) => prompt.enabled && prompt.selected && String(prompt.content || '').trim())
+      .filter((prompt) => prompt.enabled && String(prompt.content || '').trim())
       .sort((a, b) => Number(a.order) - Number(b.order));
   }
 
@@ -688,7 +687,7 @@ setTimeout(function(){
   }
 
   function button(action, label, icon, extra = '', style = '') {
-    return `<button type="button" class="stg-icon-button ${extra}" data-stg-action="${action}" title="${label}" aria-label="${label}" ${style}>${icon}</button>`;
+    return `<button type="button" class="stg-text-button ${extra}" data-stg-action="${action}" title="${label}" aria-label="${label}" ${style}>${label}</button>`;
   }
 
   function activeRecordItem(record) {
@@ -772,7 +771,16 @@ setTimeout(function(){
       </div>`;
     const content = box.querySelector('.stg-theater-content');
     content.innerHTML = '';  // 清空旧内容
-    if (item) content.appendChild(frameFor(item.content));
+    if (item) {
+      content.appendChild(frameFor(item.content));
+      // 提取生图词到外层供插件读取
+      const imageTokens = (item.content.match(/image###[^#\s]+###[^#\s]+/g) || []).join(' ');
+      if (imageTokens) {
+        box.dataset.stgImageTokens = imageTokens;
+      } else {
+        delete box.dataset.stgImageTokens;
+      }
+    }
     const editor = box.querySelector('[data-stg-field="edit-content"]');
     if (editor) editor.value = item?.content || '';
     if (!old) theaterMountPoint(host).appendChild(box);
@@ -969,17 +977,16 @@ setTimeout(function(){
                 content.style.display = 'none';
                 btn.textContent = '▶';
               }
-            " style="width:20px;height:20px;padding:0;background:transparent;border:none;cursor:pointer;color:var(--stg-text);font-weight:bold;font-size:12px;flex-shrink:0;display:grid;place-items:center">▶</button>
-            <label class="stg-check" style="flex-shrink:0;cursor:pointer" title="启用此提示词"><input type="checkbox" data-stg-prompt-field="enabled" ${p.enabled ? 'checked' : ''}><span></span></label>
-            <label class="stg-check" style="flex-shrink:0;cursor:pointer" title="选中进行生成"><input type="checkbox" data-stg-prompt-field="selected" ${p.selected ? 'checked' : ''}><span></span></label>
+            " style="width:20px;height:20px;padding:0;background:transparent;border:none;cursor:pointer;color:var(--stg-text);font-weight:bold;font-size:12px;flex-shrink:0;display:grid;place-items:center" title="展开/收起">▶</button>
+            <label class="stg-check" style="flex-shrink:0;cursor:pointer" title="勾选启用此提示词"><input type="checkbox" data-stg-prompt-field="enabled" ${p.enabled ? 'checked' : ''}><span></span></label>
             <input data-stg-prompt-field="name" value="${escapeAttr(p.name)}" placeholder="提示词名称" style="flex:1;min-width:0;padding:4px;background:transparent;border:none;color:var(--stg-text);font-size:12px;outline:none">
             <span style="font-size:11px;color:var(--stg-muted);background:#0a0f14;padding:2px 6px;border-radius:3px;flex-shrink:0">${escapeHtml(cat)}</span>
-            <button type="button" data-stg-action="duplicate-prompt" title="复制" style="width:24px;height:24px;padding:0;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;display:grid;place-items:center;color:var(--stg-muted);flex-shrink:0">${SVG.copy}</button>
-            <button type="button" data-stg-action="delete-prompt" title="删除" style="width:24px;height:24px;padding:0;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;display:grid;place-items:center;color:var(--stg-muted);flex-shrink:0" data-stg-prompt-id="${p.id}">${SVG.trash}</button>
+            <button type="button" data-stg-action="duplicate-prompt" title="复制此提示词" style="padding:4px 8px;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;color:var(--stg-text);flex-shrink:0;font-size:12px">复制</button>
+            <button type="button" data-stg-action="delete-prompt" title="删除此提示词" style="padding:4px 8px;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;color:var(--stg-text);flex-shrink:0;font-size:12px" data-stg-prompt-id="${p.id}">删除</button>
           </div>
-          <textarea id="${contentId}" data-stg-prompt-field="content" placeholder="提示词内容" style="display:none;width:100%;min-height:80px;resize:vertical;padding:8px;background:#0e151a;border:1px solid var(--stg-line);border-radius:3px;color:var(--stg-text);font-size:12px">${escapeHtml(p.content)}</textarea>
-          <div style="display:flex;gap:4px;margin-top:6px">
-            <button type="button" data-stg-action="save-prompt" title="保存此提示词" style="flex:1;height:28px;padding:4px;background:var(--stg-accent);color:#0a0f14;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600">${SVG.copy} 保存</button>
+          <textarea id="${contentId}" data-stg-prompt-field="content" placeholder="在此输入提示词内容..." style="display:none;width:100%;min-height:100px;resize:vertical;padding:8px;background:#0e151a;border:1px solid var(--stg-line);border-radius:3px;color:var(--stg-text);font-size:12px;margin-bottom:6px">${escapeHtml(p.content)}</textarea>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button type="button" data-stg-action="save-prompt" title="保存名称和内容的修改" style="padding:6px 12px;background:var(--stg-accent);color:#0a0f14;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600">保存编辑</button>
           </div>
         </div>`;
       });
@@ -1074,17 +1081,17 @@ setTimeout(function(){
   }
 
   function logsTab() {
-    const logItems = logs.map((log, idx) => {
+    const logItems = logs.slice(-50).reverse().map((log) => {
       const color = log.level === 'error' ? '#f49c91' : log.level === 'warn' ? '#f0bd7a' : '#86c8b2';
-      return `<div style="padding:6px 8px;border-bottom:1px solid var(--stg-line);font-family:monospace;font-size:11px;color:${color}"><span style="color:var(--stg-muted)">${log.timestamp}</span> [${log.level.toUpperCase()}] ${escapeHtml(log.message)}</div>`;
+      return `<div style="padding:8px 10px;border-bottom:1px solid #1a2835;font-family:monospace;font-size:12px;color:${color};line-height:1.5"><span style="color:#7a8a93">[${log.timestamp}]</span> ${escapeHtml(log.message)}</div>`;
     }).join('');
-    return `<div class="stg-section" style="padding:0">
-      <div style="display:flex;gap:6px;padding:12px;border-bottom:1px solid var(--stg-line)">
-        <button type="button" class="stg-small-action" data-stg-action="clear-logs" title="清空日志">${SVG.trash}</button>
-        <button type="button" class="stg-small-action" data-stg-action="export-logs" title="导出日志">${SVG.download}</button>
+    return `<div class="stg-section" style="padding:0;display:flex;flex-direction:column;height:100%">
+      <div style="display:flex;gap:6px;padding:12px;border-bottom:1px solid var(--stg-line);flex-shrink:0">
+        <button type="button" class="stg-small-action" data-stg-action="clear-logs" title="清空日志">清空</button>
+        <button type="button" class="stg-small-action" data-stg-action="export-logs" title="导出日志">导出</button>
       </div>
-      <div style="max-height:calc(min(730px, 100vh - 100px) - 140px);overflow-y:auto;background:#0a0f14">
-        ${logItems || '<p class="stg-muted" style="padding:20px;text-align:center">暂无日志</p>'}
+      <div style="flex:1;overflow-y:auto;background:#0a0f14">
+        ${logItems || '<div style="padding:20px;text-align:center;color:var(--stg-muted);font-size:12px">暂无日志</div>'}
       </div>
     </div>`;
   }
@@ -1133,15 +1140,15 @@ setTimeout(function(){
 
     const modal = hostDocument.createElement('div');
     modal.id = `stg-modal-${favoriteId}`;
-    modal.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:grid;place-items:center;z-index:2147483646;padding:20px;backdrop-filter:blur(4px)`;
+    modal.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:grid;place-items:center;z-index:2147483646;padding:20px;backdrop-filter:blur(4px);overflow-y:auto`;
 
     const box = hostDocument.createElement('div');
-    box.style.cssText = `background:var(--stg-panel);border:1px solid var(--stg-line);border-radius:8px;width:min(90vw,800px);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.6)`;
+    box.style.cssText = `background:var(--stg-panel);border:1px solid var(--stg-line);border-radius:8px;width:min(90vw,800px);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.6);margin:auto`;
 
     box.innerHTML = `
       <header style="display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid var(--stg-line);background:var(--stg-panel-2)">
         <strong style="color:var(--stg-text)">${escapeHtml(favorite.title || '小剧场')}</strong>
-        <button type="button" data-stg-action="close-modal" title="关闭" style="width:32px;height:32px;border:1px solid var(--stg-line);background:#0e151a;color:var(--stg-text);cursor:pointer;font-size:18px;border-radius:4px;display:grid;place-items:center;padding:0">${SVG.close}</button>
+        <button type="button" data-stg-action="close-modal" title="关闭（ESC）" style="padding:6px 10px;border:1px solid var(--stg-line);background:transparent;color:var(--stg-text);cursor:pointer;font-size:12px;border-radius:4px">关闭</button>
       </header>
       <div style="flex:1;overflow:auto;color:var(--stg-text);background:#10191e"></div>
     `;
@@ -1150,7 +1157,23 @@ setTimeout(function(){
     const iframe = frameFor(favorite.content);
     content.appendChild(iframe);
 
-    box.querySelector('[data-stg-action="close-modal"]').addEventListener('click', () => modal.remove());
+    const closeModal = () => modal.remove();
+    box.querySelector('[data-stg-action="close-modal"]').addEventListener('click', closeModal);
+
+    // 点击外面关闭
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    // ESC 键关闭
+    const escListener = (e) => {
+      if (e.key === 'Escape') {
+        closeModal();
+        hostDocument.removeEventListener('keydown', escListener);
+      }
+    };
+    hostDocument.addEventListener('keydown', escListener);
+
     modal.appendChild(box);
     hostDocument.body.appendChild(modal);
   }
@@ -1314,7 +1337,7 @@ setTimeout(function(){
     fab.style.opacity = '1';
     fab.style.pointerEvents = 'auto';
 
-    // 应用FAB自定义设置
+      // 应用FAB自定义设置
     const fabSize = Math.max(32, Math.min(120, Number(settings.fabSize) || 48));
     fab.style.width = `${fabSize}px`;
     fab.style.height = `${fabSize}px`;
@@ -1751,13 +1774,9 @@ setTimeout(function(){
         if (prompt) {
           const nameInput = row.querySelector('[data-stg-prompt-field="name"]');
           const contentTextarea = row.querySelector('[data-stg-prompt-field="content"]');
-          const enabledCheckbox = row.querySelector('[data-stg-prompt-field="enabled"]');
-          const selectedCheckbox = row.querySelector('[data-stg-prompt-field="selected"]');
 
-          if (nameInput) prompt.name = nameInput.value;
+          if (nameInput) prompt.name = nameInput.value || '未命名';
           if (contentTextarea) prompt.content = contentTextarea.value;
-          if (enabledCheckbox) prompt.enabled = enabledCheckbox.checked;
-          if (selectedCheckbox) prompt.selected = selectedCheckbox.checked;
 
           await saveSettings();
           setStatus('✓ 提示词已保存');
@@ -1994,6 +2013,9 @@ setTimeout(function(){
           section.style.display = settings.sendWorldbook ? 'block' : 'none';
           if (settings.sendWorldbook) updateWorldbookList();
         }
+      }
+      if (key === 'fabSize') {
+        addLog(`调整悬浮球大小: ${settings.fabSize}px`, 'info');
       }
       return;
     }

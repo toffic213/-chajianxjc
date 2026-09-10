@@ -104,7 +104,11 @@
 .stg-field input, .stg-field select, .stg-theater-select, .stg-edit-area textarea {
   width: 100%; min-width: 0; border: 1px solid var(--stg-line);
   border-radius: 5px; padding: 8px 9px;
-  color: var(--stg-text); background: #0a0f14; font: inherit;
+  color: #f0f4f8; background: #0a0f14; font: inherit;
+}
+
+.stg-field input::placeholder, .stg-field select::placeholder, .stg-edit-area textarea::placeholder {
+  color: #7a8a93;
 }
 
 .stg-field input:focus, .stg-field select:focus, .stg-edit-area textarea:focus {
@@ -215,6 +219,18 @@
   width: 32px; height: 32px; border-radius: 4px;
   font-size: 18px; transition: all 0.2s ease;
   display: grid; place-items: center;
+}
+
+.stg-text-button {
+  padding: 6px 10px; border: 1px solid var(--stg-line);
+  border-radius: 4px; background: transparent; color: var(--stg-text);
+  font-size: 12px; cursor: pointer; transition: all 0.2s ease;
+  display: inline-block; white-space: nowrap;
+}
+
+.stg-text-button:hover {
+  border-color: var(--stg-accent); color: var(--stg-accent);
+  background: #ffffff08;
 }
 
 .stg-icon-button:hover, .stg-icon-button.is-active {
