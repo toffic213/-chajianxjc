@@ -8,7 +8,13 @@
   const MESSAGE_KEY = PLUGIN_ID;
   const INSTANCE_KEY = '__stageTheaterInstance';
   const STYLE_LINK_ID = 'stage-theater-style-link';
-  const hostWindow = window.parent ?? window;
+  const hostWindow = (() => {
+    try {
+      return window.parent && window.parent.document ? window.parent : window;
+    } catch {
+      return window;
+    }
+  })();
   const hostDocument = hostWindow.document;
   const scriptUrl = document.currentScript?.src || '';
   const SVG = {

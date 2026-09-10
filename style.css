@@ -1,4 +1,10 @@
 #stg-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
   --stg-bg: #12191f;
   --stg-panel: #172229;
   --stg-panel-2: #1d2b33;
@@ -28,6 +34,11 @@
   vertical-align: -0.15em;
 }
 
+#stg-root .stg-fab,
+#stg-root .stg-panel {
+  pointer-events: auto;
+}
+
 .stg-fab,
 #stage-theater-fab {
   position: fixed;
@@ -36,7 +47,7 @@
   z-index: 2147483647 !important;
   width: 48px;
   height: 48px;
-  display: grid;
+  display: grid !important;
   place-items: center;
   padding: 0;
   border: 1px solid #9fd7c3;
