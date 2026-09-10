@@ -1049,6 +1049,32 @@ setTimeout(function(){
       fab.title = '小剧场设置';
       fab.setAttribute('aria-label', '小剧场设置');
       fab.innerHTML = SVG.theater;
+
+      // 手机端强制 inline style
+      fab.style.cssText = `
+        position: fixed;
+        right: 12px;
+        bottom: 12px;
+        z-index: 2147483647;
+        width: 44px;
+        height: 44px;
+        border: 2px solid #86c8b2;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #1a4d45, #0d2a27);
+        color: #c7f3e3;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        font-size: 20px;
+        padding: 0;
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        touch-action: none;
+        user-select: none;
+        transition: transform 0.25s ease;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.125);
+      `;
       root.appendChild(fab);
       console.log('[FAB] 已创建，位置:', {
         bottom: fab.style.bottom,
