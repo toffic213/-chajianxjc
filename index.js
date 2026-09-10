@@ -753,7 +753,6 @@ setTimeout(function(){
 
   function mountUI() {
     if (!hostDocument.body) {
-      alert('手机端初始化失败：body 不存在');
       return false;
     }
     if (hostDocument.getElementById(ROOT_ID)) {
@@ -782,7 +781,6 @@ setTimeout(function(){
       <input type="file" accept="application/json" data-stg-import hidden>
       <input type="file" accept="image/png,image/jpeg,image/webp" data-stg-fab-image-upload hidden>`;
     document.body.appendChild(root);
-    alert('手机端：UI 已挂载到 DOM');
     panel = root.querySelector('.stg-panel');
     bindHostEvents();
     renderTab('general');
@@ -1055,9 +1053,9 @@ setTimeout(function(){
     // 立刻给 FAB 加 inline style（不管是否新建）
     fab.style.cssText = `
       position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
+      top: calc(50% - 22px);
+      left: calc(50% - 22px);
+      
       
       
       z-index: 2147483647;
@@ -1231,9 +1229,7 @@ setTimeout(function(){
     link.dataset.stageTheater = 'true';
     if (hostDocument.head) {
       hostDocument.head.appendChild(link);
-      alert(`CSS 已加载: ${href}`);
     } else {
-      alert(`手机端错误：head 不存在`);
     }
   }
 
@@ -1662,7 +1658,6 @@ setTimeout(function(){
   }
 
   function init() {
-    alert('[舞台小剧场] 插件已启动');
     console.log(`[${PLUGIN_ID}] [诊断] init 入口`);
     if (!hostDocument.body) {
       console.log(`[${PLUGIN_ID}] [诊断] hostDocument.body 不存在，返回false`);
