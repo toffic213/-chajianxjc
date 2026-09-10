@@ -64,6 +64,8 @@
   const pending = new Map();
   let eventsSubscribed = false;
   let observer = null;
+  let fabResizeBound = false;
+  let fabResizeHandler = null;
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -757,10 +759,48 @@
     if (saved) {
       try {
         const point = JSON.parse(saved);
-        fab.style.right = `${Math.max(8, Math.min(hostWindow.innerWidth - 56, point.right))}px`;
-        fab.style.bottom = `${Math.max(8, Math.min(hostWindow.innerHeight - 56, point.bottom))}px`;
+        const right = Number(point?.right);
+        const bottom = Number(point?.bottom);
+        if (Number.isFinite(right)) {
+          fab.style.right = `${Math.max(8, Math.min(Math.max(8, hostWindow.innerWidth - fab.offsetWidth - 8), right))}px`;
+        }
+        if (Number.isFinite(bottom)) {
+          fab.style.bottom = `${Math.max(8, Math.min(Math.max(8, hostWindow.innerHeight - fab.offsetHeight - 8), bottom))}px`;
+        }
       } catch {}
     }
+    positionPanel();
+  }
+
+  function saveFabPosition(fab) {
+    const rect = fab.getBoundingClientRect();
+    const right = Math.max(8, hostWindow.innerWidth - rect.right);
+    const bottom = Math.max(8, hostWindow.innerHeight - rect.bottom);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}-fab`, JSON.stringify({ right, bottom }));
+    } catch (error) {
+      console.warn(`[${PLUGIN_ID}] FAB position save failed`, error);
+    }
+  }
+
+  function positionPanel() {
+    const fab = hostDocument.getElementById(FAB_ID);
+    if (!fab || !panel || panel.hidden) return;
+    const fabRect = fab.getBoundingClientRect();
+    const panelWidth = panel.offsetWidth;
+    const panelHeight = panel.offsetHeight;
+    if (!panelWidth || !panelHeight) return;
+    const margin = 8;
+    const gap = 12;
+    const maxLeft = Math.max(margin, hostWindow.innerWidth - panelWidth - margin);
+    const left = Math.min(maxLeft, Math.max(margin, fabRect.right - panelWidth));
+    let top = fabRect.top - panelHeight - gap;
+    if (top < margin) top = fabRect.bottom + gap;
+    top = Math.min(Math.max(margin, top), Math.max(margin, hostWindow.innerHeight - panelHeight - margin));
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(top)}px`;
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
   }
 
   function ensureFab() {
@@ -787,12 +827,96 @@
     fab.style.pointerEvents = 'auto';
 
     if (!fab.dataset.stageTheaterBound) {
+      let pointerId = null;
+      let startX = 0;
+      let startY = 0;
+      let startLeft = 0;
+      let startTop = 0;
+      let moved = false;
+      let suppressClick = false;
+      let currentDeltaX = 0;
+      let currentDeltaY = 0;
+
+      fab.addEventListener('pointerdown', (event) => {
+        if (event.button !== undefined && event.button !== 0) return;
+        const rect = fab.getBoundingClientRect();
+        pointerId = event.pointerId;
+        startX = event.clientX;
+        startY = event.clientY;
+        startLeft = rect.left;
+        startTop = rect.top;
+        moved = false;
+        suppressClick = false;
+        currentDeltaX = 0;
+        currentDeltaY = 0;
+        fab.setPointerCapture?.(event.pointerId);
+      });
+
+      fab.addEventListener('pointermove', (event) => {
+        if (pointerId !== event.pointerId) return;
+        const deltaX = event.clientX - startX;
+        const deltaY = event.clientY - startY;
+        if (!moved && Math.hypot(deltaX, deltaY) <= 6) return;
+        moved = true;
+        suppressClick = true;
+        event.preventDefault();
+        const width = fab.offsetWidth || 48;
+        const height = fab.offsetHeight || 48;
+        const left = Math.max(8 - width, Math.min(hostWindow.innerWidth - 8, startLeft + deltaX));
+        const top = Math.max(8 - height, Math.min(hostWindow.innerHeight - 8, startTop + deltaY));
+        currentDeltaX = left - startLeft;
+        currentDeltaY = top - startTop;
+        fab.style.transform = `translate3d(${currentDeltaX}px, ${currentDeltaY}px, 0)`;
+        positionPanel();
+      });
+
+      const finishPointer = (event) => {
+        if (pointerId !== event.pointerId) return;
+        const wasMoved = moved;
+        if (moved) {
+          const width = fab.offsetWidth || 48;
+          const height = fab.offsetHeight || 48;
+          const finalLeft = startLeft + currentDeltaX;
+          const finalTop = startTop + currentDeltaY;
+          const right = Math.max(8, hostWindow.innerWidth - finalLeft - width);
+          const bottom = Math.max(8, hostWindow.innerHeight - finalTop - height);
+          fab.style.transform = '';
+          fab.style.left = 'auto';
+          fab.style.top = 'auto';
+          fab.style.right = `${Math.round(right)}px`;
+          fab.style.bottom = `${Math.round(bottom)}px`;
+          saveFabPosition(fab);
+        } else {
+          fab.style.transform = '';
+        }
+        fab.releasePointerCapture?.(event.pointerId);
+        pointerId = null;
+        moved = false;
+        suppressClick = event.type === 'pointerup' && wasMoved;
+        currentDeltaX = 0;
+        currentDeltaY = 0;
+      };
+
+      fab.addEventListener('pointerup', finishPointer);
+      fab.addEventListener('pointercancel', finishPointer);
       fab.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (suppressClick) {
+          suppressClick = false;
+          return;
+        }
         togglePanel(true);
       });
       fab.dataset.stageTheaterBound = 'true';
+    }
+    if (!fabResizeBound) {
+      fabResizeHandler = () => {
+        positionFab();
+        positionPanel();
+      };
+      hostWindow.addEventListener('resize', fabResizeHandler);
+      fabResizeBound = true;
     }
     positionFab();
     return fab;
@@ -812,6 +936,10 @@
   function togglePanel(show) {
     if (!panel) return;
     panel.hidden = typeof show === 'boolean' ? !show : !panel.hidden;
+    if (!panel.hidden) {
+      const raf = hostWindow.requestAnimationFrame || ((callback) => setTimeout(callback, 0));
+      raf(() => positionPanel());
+    }
   }
 
   async function handleClick(event) {
@@ -1147,6 +1275,11 @@
     destroy: () => {
       observer?.disconnect?.();
       observer = null;
+      if (fabResizeHandler) {
+        hostWindow.removeEventListener('resize', fabResizeHandler);
+        fabResizeHandler = null;
+      }
+      fabResizeBound = false;
       hostDocument.getElementById(ROOT_ID)?.remove();
       hostDocument.getElementById(FAB_ID)?.remove();
       hostDocument.getElementById(STYLE_LINK_ID)?.remove();

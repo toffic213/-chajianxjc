@@ -49,6 +49,8 @@
   opacity: 1 !important;
   pointer-events: auto;
   visibility: visible !important;
+  touch-action: none;
+  user-select: none;
 }
 
 .stg-fab svg,
