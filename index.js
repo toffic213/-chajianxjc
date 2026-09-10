@@ -804,7 +804,7 @@ setTimeout(function(){
       </aside>
       <input type="file" accept="application/json" data-stg-import hidden>
       <input type="file" accept="image/png,image/jpeg,image/webp" data-stg-fab-image-upload hidden>`;
-    document.body.appendChild(root);
+    hostDocument.body.appendChild(root);
     panel = root.querySelector('.stg-panel');
     bindHostEvents();
     renderTab('general');
