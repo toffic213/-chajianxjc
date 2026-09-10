@@ -1624,6 +1624,7 @@ setTimeout(function(){
   }
 
   function init() {
+    alert('[舞台小剧场] 插件已启动');
     console.log(`[${PLUGIN_ID}] [诊断] init 入口`);
     if (!hostDocument.body) {
       console.log(`[${PLUGIN_ID}] [诊断] hostDocument.body 不存在，返回false`);
