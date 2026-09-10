@@ -42,6 +42,8 @@
   border: 2px solid #86c8b2;
   border-radius: 50%;
   background: linear-gradient(135deg, #1a4d45, #0d2a27);
+  background-size: cover;
+  background-position: center;
   color: #c7f3e3;
   box-shadow: 0 8px 24px #000a, inset 0 1px 0 #ffffff20;
   cursor: pointer;
@@ -51,7 +53,7 @@
   visibility: visible !important;
   touch-action: none;
   user-select: none;
-  transition: all 0.3s ease;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
 .stg-fab svg,
@@ -70,7 +72,6 @@
 .stg-fab:focus-visible,
 #stage-theater-fab:hover,
 #stage-theater-fab:focus-visible {
-  background: linear-gradient(135deg, #2b6d62, #186d64);
   box-shadow: 0 12px 32px #0008, inset 0 1px 0 #ffffff30;
   transform: scale(1.08);
   outline: none;
@@ -536,11 +537,75 @@
   border-bottom: 0;
 }
 
+/* 桌面端优化 */
+@media (min-width: 1024px) {
+  .stg-panel {
+    width: min(500px, calc(100vw - 24px));
+  }
+
+  .stg-panel-header strong {
+    font-size: 17px;
+  }
+
+  #stg-root {
+    font-size: 15px;
+  }
+
+  .stg-icon-button,
+  .stg-input-action button {
+    min-height: 32px;
+    padding: 6px 14px;
+    font-size: 14px;
+  }
+
+  .stg-field {
+    padding: 10px;
+  }
+
+  .stg-field input,
+  .stg-field select,
+  .stg-prompt-row input,
+  .stg-prompt-row textarea,
+  .stg-edit-area textarea {
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+}
+
+/* 平板/中等屏幕 */
+@media (min-width: 561px) and (max-width: 1023px) {
+  .stg-panel {
+    width: min(450px, calc(100vw - 24px));
+  }
+
+  .stg-fab,
+  #stage-theater-fab {
+    width: 48px;
+    height: 48px;
+    font-size: 22px;
+  }
+
+  .stg-icon-button,
+  .stg-input-action button {
+    min-height: 34px;
+    padding: 6px 13px;
+    font-size: 13px;
+  }
+
+  #stg-root {
+    font-size: 14px;
+  }
+}
+
+/* 手机端 */
 @media (max-width: 560px) {
   .stg-fab,
   #stage-theater-fab {
     right: 12px;
     bottom: 12px;
+    width: 44px !important;
+    height: 44px !important;
+    font-size: 20px !important;
   }
 
   .stg-panel {
@@ -550,12 +615,54 @@
     max-height: calc(100vh - 82px);
   }
 
+  #stg-root {
+    font-size: 13px;
+  }
+
+  .stg-panel-header strong {
+    font-size: 15px;
+  }
+
   .stg-theater-header {
     align-items: flex-start;
+    gap: 8px;
   }
 
   .stg-theater-tools {
     flex-wrap: wrap;
     justify-content: flex-end;
+  }
+
+  .stg-icon-button,
+  .stg-input-action button {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+
+  .stg-field {
+    padding: 10px;
+    font-size: 14px;
+  }
+
+  .stg-field input,
+  .stg-field select,
+  .stg-prompt-row input,
+  .stg-prompt-row textarea,
+  .stg-edit-area textarea {
+    padding: 10px;
+  }
+
+  .stg-switch-row i {
+    width: 42px;
+    height: 24px;
+  }
+
+  .stg-switch-row i::after {
+    width: 16px;
+    height: 16px;
+  }
+
+  .stg-panel-scroll {
+    max-height: calc(100vh - 180px);
   }
 }

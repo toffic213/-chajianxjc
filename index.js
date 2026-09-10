@@ -34,6 +34,9 @@
     sendWorldbook: false,
     sendPreviousUser: true,
     promptMode: 'merged',
+    fabSize: 48,
+    fabImage: null,
+    fabShape: 'circle',
     profiles: [{
       id: 'default',
       name: '默认 API',
@@ -91,6 +94,12 @@
       name: p.name || `提示词 ${index + 1}`,
       order: Number.isFinite(Number(p.order)) ? Number(p.order) : index
     }));
+
+    // 手机端自动调整 FAB 大小
+    if (window.innerWidth <= 560 && next.fabSize === DEFAULT_SETTINGS.fabSize) {
+      next.fabSize = 40;
+    }
+
     return next;
   }
 
@@ -767,7 +776,8 @@ setTimeout(function(){
         </nav>
         <div class="stg-panel-body" data-stg-panel-body></div>
       </aside>
-      <input type="file" accept="application/json" data-stg-import hidden>`;
+      <input type="file" accept="application/json" data-stg-import hidden>
+      <input type="file" accept="image/png,image/jpeg,image/webp" data-stg-fab-image-upload hidden>`;
     hostDocument.body.appendChild(root);
     panel = root.querySelector('.stg-panel');
     bindHostEvents();
@@ -812,6 +822,25 @@ setTimeout(function(){
       <label class="stg-field"><span>当前聊天</span><select data-stg-chat-toggle><option value="inherit" ${override === 'inherit' ? 'selected' : ''}>跟随全局</option><option value="true" ${override === 'true' ? 'selected' : ''}>启用</option><option value="false" ${override === 'false' ? 'selected' : ''}>关闭</option></select></label>
       <button type="button" class="stg-command-button" data-stg-action="generate-current">${SVG.play}<span>手动生成当前 AI 回复</span></button>
       <p class="stg-muted">自动结果会显示在对应 AI 消息下方，悬浮球仅打开设置。</p>
+
+      <hr style="margin:12px 0;border:none;border-top:1px solid var(--stg-line)">
+      <strong style="color:var(--stg-text);display:block;margin-bottom:8px">🐾 桌宠悬浮球</strong>
+
+      <label class="stg-field"><span>悬浮球大小 (px)</span><input type="number" min="32" max="120" step="4" data-stg-setting="fabSize" value="${settings.fabSize}"></label>
+
+      <label class="stg-field"><span>形状</span><select data-stg-setting="fabShape">
+        <option value="circle" ${settings.fabShape === 'circle' ? 'selected' : ''}>圆形</option>
+        <option value="square" ${settings.fabShape === 'square' ? 'selected' : ''}>方形</option>
+        <option value="none" ${settings.fabShape === 'none' ? 'selected' : ''}>不规则 (无圆角)</option>
+      </select></label>
+
+      <label class="stg-field"><span>自定义图片</span></label>
+      <div class="stg-inline-actions">
+        ${settings.fabImage ? `<button type="button" class="stg-small-action" data-stg-action="preview-fab-image" title="预览">${SVG.play}</button>` : ''}
+        <button type="button" class="stg-small-action" data-stg-action="upload-fab-image" title="上传图片">${SVG.upload}</button>
+        ${settings.fabImage ? `<button type="button" class="stg-small-action" data-stg-action="remove-fab-image" title="删除图片">${SVG.trash}</button>` : ''}
+      </div>
+      <p class="stg-muted">${settings.fabImage ? '✓ 已上传图片' : '支持 PNG/JPG，建议透明背景'}</p>
     </div>`;
   }
 
@@ -1025,6 +1054,34 @@ setTimeout(function(){
     fab.style.opacity = '1';
     fab.style.pointerEvents = 'auto';
 
+    // 应用FAB自定义设置
+    const fabSize = Math.max(32, Math.min(120, Number(settings.fabSize) || 48));
+    fab.style.width = `${fabSize}px`;
+    fab.style.height = `${fabSize}px`;
+    fab.style.fontSize = `${Math.round(fabSize * 0.48)}px`;
+
+    // 应用形状和背景
+    fab.innerHTML = '';  // 先清空
+
+    if (settings.fabImage) {
+      // 使用图片作为背景
+      fab.style.backgroundImage = `url("${settings.fabImage}")`;
+      fab.style.backgroundSize = 'cover';
+      fab.style.backgroundPosition = 'center';
+    } else {
+      // 使用默认图标
+      fab.style.backgroundImage = 'none';
+      fab.innerHTML = SVG.theater;
+    }
+
+    if (settings.fabShape === 'circle') {
+      fab.style.borderRadius = '50%';
+    } else if (settings.fabShape === 'square') {
+      fab.style.borderRadius = '8px';
+    } else {
+      fab.style.borderRadius = '0';
+    }
+
     if (!fab.dataset.stageTheaterBound) {
       let pointerId = null;
       let startX = 0;
@@ -1159,6 +1216,31 @@ setTimeout(function(){
       const last = findLastAssistant();
       if (last) await generateForMessage(last.id, { manual: true });
       else setStatus('当前没有可生成的小剧场的 AI 回复。', true);
+      return;
+    }
+    if (action === 'upload-fab-image') {
+      root.querySelector('[data-stg-fab-image-upload]').click();
+      return;
+    }
+    if (action === 'remove-fab-image') {
+      settings.fabImage = null;
+      await saveSettings();
+      renderTab('general');
+      ensureFab();
+      setStatus('✓ 已删除图片');
+      return;
+    }
+    if (action === 'preview-fab-image') {
+      if (settings.fabImage) {
+        const modal = hostDocument.createElement('div');
+        modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#00000080;display:grid;place-items:center;z-index:2147483646;padding:20px';
+        const box = hostDocument.createElement('div');
+        box.style.cssText = 'background:white;border-radius:8px;padding:20px;text-align:center;max-width:300px';
+        box.innerHTML = `<img src="${settings.fabImage}" style="max-width:100%;max-height:300px;border-radius:8px"><p style="margin-top:12px;color:#666">FAB 预览</p><button style="margin-top:8px;padding:8px 16px;background:#86c8b2;color:white;border:none;border-radius:4px;cursor:pointer">关闭</button>`;
+        box.querySelector('button').addEventListener('click', () => modal.remove());
+        modal.appendChild(box);
+        hostDocument.body.appendChild(modal);
+      }
       return;
     }
 
@@ -1376,6 +1458,25 @@ setTimeout(function(){
       }
       return;
     }
+    if (target.matches('[data-stg-fab-image-upload]') && target.files?.[0]) {
+      try {
+        const file = target.files[0];
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          settings.fabImage = e.target.result;
+          await saveSettings();
+          renderTab('general');
+          ensureFab();
+          setStatus('✓ 图片已上传');
+        };
+        reader.readAsDataURL(file);
+      } catch (error) {
+        setStatus(`上传失败：${error.message || error}`, true);
+      } finally {
+        target.value = '';
+      }
+      return;
+    }
     if (target.matches('[data-stg-setting="autoEnabled"]')) {
       settings.autoEnabled = target.checked;
       await saveSettings();
@@ -1398,6 +1499,10 @@ setTimeout(function(){
       const key = target.dataset.stgSetting;
       settings[key] = target.type === 'checkbox' ? target.checked : (target.type === 'number' ? Number(target.value) : target.value);
       await saveSettings();
+      // 如果改变了FAB相关设置，重新应用样式
+      if (['fabSize', 'fabShape'].includes(key)) {
+        ensureFab();
+      }
       return;
     }
     if (target.matches('[data-stg-profile-field]')) {
