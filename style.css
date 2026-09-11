@@ -276,6 +276,17 @@
 
 .stg-small-action { font-size: 12px; }
 
+.stg-group-control { display: inline-flex; align-items: stretch; }
+.stg-group-chip, .stg-group-toggle {
+  border: 1px solid var(--stg-line); color: var(--stg-text);
+  background: #1a2835; cursor: pointer; font-size: 12px;
+}
+.stg-group-chip { padding: 6px 10px; border-radius: 16px 0 0 16px; }
+.stg-group-chip span { margin-left: 4px; font-size: 10px; opacity: .7; }
+.stg-group-toggle { padding: 0 7px; border-left: 0; border-radius: 0 16px 16px 0; color: var(--stg-accent); }
+.stg-group-toggle.is-disabled { color: #f0a39a; background: #291d24; }
+.stg-group-chip.active { color: #0a0f14; background: var(--stg-accent); }
+
 .stg-prompt-row {
   margin-bottom: 8px; padding: 10px;
   background: #0d1620; border: 1px solid var(--stg-line); border-radius: 4px;

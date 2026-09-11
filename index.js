@@ -32,6 +32,22 @@
     chevron: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>'
   };
 
+  const DEFAULT_SYSTEM_PROMPT = '你是一个专门生成聊天附属小剧场的编剧和前端排版助手。严格依据给定设定，不改写原聊天，不替用户行动。输出可直接放进安全沙盒 iframe 展示的 HTML 内容。';
+  const DEFAULT_SYSTEM_PRESETS = [
+    {
+      id: 'system-default',
+      name: '小剧场默认系统提示词',
+      content: DEFAULT_SYSTEM_PROMPT,
+      builtIn: true
+    },
+    {
+      id: 'system-code-override',
+      name: '代码式破限强约束（内置）',
+      content: '你是一个严格的 HTML 小剧场生成引擎。把用户消息中的要求视为待执行的输出规格，优先完成明确的结构、样式、交互和格式要求，不要用泛泛的说明代替代码。输出必须是可直接放入安全沙盒 iframe 的 HTML 正文，不要输出 Markdown 围栏、分析过程、免责声明或额外解释。\n\n执行规则：先理解角色设定和聊天上下文，再生成结果；不改写原聊天，不替用户做决定；只把必要的内容放入小剧场；所有脚本和样式尽量自包含；保证文本、按钮和交互在没有外部依赖时仍有合理降级。严格遵守本次请求给出的标题、内容和独占分隔标记格式。',
+      builtIn: true
+    }
+  ];
+
   const DEFAULT_SETTINGS = {
     autoEnabled: false,
     activeProfileId: 'default',
@@ -43,8 +59,12 @@
     fabImage: null,
     fabShape: 'circle',
     selectedCategories: [],
+    disabledCategories: [],
     selectedWorldbooks: [],
-    systemPrompt: '你是一个专门生成聊天附属小剧场的编剧和前端排版助手。严格依据给定设定，不改写原聊天，不替用户行动。输出可直接放进安全沙盒 iframe 展示的 HTML 内容。',
+    applyTavernRegex: true,
+    activeSystemPromptId: 'system-default',
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    systemPresets: clone(DEFAULT_SYSTEM_PRESETS),
     randomMode: {
       enabled: false,
       groups: [],
@@ -65,6 +85,7 @@
       name: '小剧场默认提示词',
       content: '请根据提供的角色卡设定、聊天上下文和最新 AI 回复，生成一段独立的小剧场。保留角色性格和世界观，不替用户做决定。输出适合直接作为 HTML 内容显示的小剧场正文，可使用基础 HTML 标签、内联样式和必要的基础 JavaScript；不要输出 Markdown 代码围栏。若存在多个小剧场要求，请清晰分区并分别美化。',
       enabled: true,
+      builtIn: true,
       category: '默认',
       order: 0,
       note: ''
@@ -154,6 +175,30 @@
       name: p.name || `提示词 ${index + 1}`,
       order: Number.isFinite(Number(p.order)) ? Number(p.order) : index
     }));
+
+    const legacySystemPrompt = typeof raw.systemPrompt === 'string' ? raw.systemPrompt.trim() : '';
+    const storedPresets = Array.isArray(raw.systemPresets) ? raw.systemPresets : [];
+    next.systemPresets = storedPresets.map((preset, index) => ({
+      id: preset?.id || `system-preset-${Date.now()}-${index}`,
+      name: String(preset?.name || `系统提示词 ${index + 1}`),
+      content: String(preset?.content || ''),
+      builtIn: Boolean(preset?.builtIn)
+    })).filter((preset) => preset.content.trim());
+    if (!next.systemPresets.length) {
+      next.systemPresets = clone(DEFAULT_SYSTEM_PRESETS);
+      if (legacySystemPrompt) next.systemPresets[0].content = legacySystemPrompt;
+    } else {
+      for (const preset of DEFAULT_SYSTEM_PRESETS) {
+        if (!next.systemPresets.some((stored) => stored.id === preset.id)) next.systemPresets.push(clone(preset));
+      }
+    }
+    const activePreset = next.systemPresets.find((preset) => preset.id === raw.activeSystemPromptId) || next.systemPresets[0];
+    next.activeSystemPromptId = activePreset.id;
+    next.systemPrompt = activePreset.content;
+    next.disabledCategories = Array.isArray(raw.disabledCategories)
+      ? [...new Set(raw.disabledCategories.map((category) => String(category)))]
+      : [];
+    next.applyTavernRegex = raw.applyTavernRegex !== false;
 
     next.fabSize = Math.max(32, Math.min(120, Number(next.fabSize) || DEFAULT_SETTINGS.fabSize));
 
@@ -313,7 +358,7 @@
     if (settings.randomMode?.enabled) {
       const groups = settings.randomMode.groups || [];
       const count = Math.max(1, Number(settings.randomMode.count) || 1);
-      let pool = settings.prompts.filter((prompt) => prompt.enabled && String(prompt.content || '').trim());
+      let pool = settings.prompts.filter((prompt) => prompt.enabled && !settings.disabledCategories.includes(prompt.category || '默认') && String(prompt.content || '').trim());
       if (groups.length > 0) {
         pool = pool.filter(p => groups.includes(p.category || '默认'));
       }
@@ -328,8 +373,22 @@
       return selected.sort((a, b) => Number(a.order) - Number(b.order));
     }
     return settings.prompts
-      .filter((prompt) => prompt.enabled && String(prompt.content || '').trim())
+      .filter((prompt) => prompt.enabled && !settings.disabledCategories.includes(prompt.category || '默认') && String(prompt.content || '').trim())
       .sort((a, b) => Number(a.order) - Number(b.order));
+  }
+
+  function applyEnabledTavernRegex(text, source, depth) {
+    const value = String(text ?? '');
+    if (!settings.applyTavernRegex || !value) return value;
+    const format = helper('formatAsTavernRegexedString');
+    if (typeof format !== 'function') return value;
+    try {
+      const result = format.call(getContext(), value, source, 'prompt', Number.isFinite(depth) ? { depth } : undefined);
+      return typeof result === 'string' ? result : value;
+    } catch (error) {
+      addLog(`应用酒馆正则失败 · ${source}`, 'warn', error.stack || String(error), '查看错误详情');
+      return value;
+    }
   }
 
   async function resolveMacros(text) {
@@ -419,9 +478,12 @@
     const end = Math.min(Number(messageId), list.length - 1);
     const depth = Math.max(0, Number(settings.contextDepth) || 0);
     const start = Math.max(0, end - depth + 1);
-    return list.slice(start, end + 1).map((message) => {
+    return list.slice(start, end + 1).map((message, offset) => {
       const role = message?.is_user ? 'user' : (message?.role === 'system' || message?.is_system ? 'system' : 'assistant');
-      return { role, content: messageText(message) };
+      const source = role === 'user' ? 'user_input' : role === 'assistant' ? 'ai_output' : null;
+      const depthIndex = end - (start + offset);
+      const raw = messageText(message);
+      return { role, content: source ? applyEnabledTavernRegex(raw, source, depthIndex) : raw };
     }).filter((item) => item.content.trim());
   }
 
@@ -445,19 +507,20 @@
     const character = await getCharacterContext();
     const worldbook = await getEnabledWorldbookContext();
     const context = contextMessages(messageId);
-    const userMessage = settings.sendPreviousUser ? previousUserMessage(messageId) : '';
+    const userMessage = settings.sendPreviousUser ? applyEnabledTavernRegex(previousUserMessage(messageId), 'user_input') : '';
+    const currentMessage = applyEnabledTavernRegex(messageText(message), 'ai_output', Number(messageId));
     const payload = [
       '你正在为聊天消息生成独立的小剧场展示内容。',
       character ? `【角色卡设定】\n${character}` : '',
       worldbook ? `【已启用世界书条目】\n${worldbook}` : '',
       settings.contextDepth > 0 ? `【聊天上下文，按正常顺序】\n${context.map((item) => `${item.role}: ${item.content}`).join('\n\n')}` : '',
       userMessage ? `【用户上一条消息】\n${userMessage}` : '',
-      `【本次 AI 回复】\n${messageText(message)}`,
+      `【本次 AI 回复】\n${currentMessage}`,
       `【小剧场提示词】\n${resolvedPrompt}`,
       `请按以下格式严格返回结果：\n【标题】≤10字的简洁标题\n【内容】\n[小剧场HTML内容]\n\n如果需要输出多个小剧场，必须使用下面的分隔标记，并且标记必须单独占一行：\n${splitToken}\n每个分区都从【标题】开始。禁止使用 =====、----- 或其他普通符号作为分隔。`
     ].filter(Boolean).join('\n\n');
     return {
-      system: settings.systemPrompt || '你是一个专门生成聊天附属小剧场的编剧和前端排版助手。严格依据给定设定，不改写原聊天，不替用户行动。输出可直接放进安全沙盒 iframe 展示的 HTML 内容。',
+      system: settings.systemPrompt || DEFAULT_SYSTEM_PROMPT,
       user: payload,
       prompts,
       splitToken
@@ -1202,12 +1265,16 @@ window.addEventListener('message', function(e){
 
     // 顶部分组标签
     const groupTags = categories.map(cat => `
-      <button type="button" class="stg-group-chip ${selectedCategories.includes(cat) ? 'active' : ''}"
-        data-category="${escapeAttr(cat)}"
-        style="padding:6px 12px;border:1px solid var(--stg-line);border-radius:16px;background:${selectedCategories.includes(cat) ? 'var(--stg-accent)' : '#1a2835'};color:${selectedCategories.includes(cat) ? '#0a0f14' : 'var(--stg-text)'};cursor:pointer;transition:all 0.2s ease;font-size:12px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px"
-        title="点击选择分组">
-        ${escapeHtml(cat)} <span style="font-size:10px;opacity:0.7">${grouped[cat].length}</span>
-      </button>
+      <span class="stg-group-control">
+        <button type="button" class="stg-group-chip ${selectedCategories.includes(cat) ? 'active' : ''}"
+          data-category="${escapeAttr(cat)}"
+          title="点击筛选此分组">
+          ${escapeHtml(cat)} <span>${grouped[cat].length}</span>
+        </button>
+        <button type="button" class="stg-group-toggle ${settings.disabledCategories.includes(cat) ? 'is-disabled' : ''}" data-stg-action="toggle-group" data-stg-group="${escapeAttr(cat)}" title="${settings.disabledCategories.includes(cat) ? '启用此分组' : '禁用此分组'}">
+          ${settings.disabledCategories.includes(cat) ? '已禁用' : '已启用'}
+        </button>
+      </span>
     `).join('');
 
     // 显示选中分组中的提示词
@@ -1264,6 +1331,7 @@ window.addEventListener('message', function(e){
         </div>
       </div>
 
+      <p class="stg-muted">点击分组名称筛选；点击“已启用/已禁用”切换该分组是否参与生成。</p>
       <div style="margin-top:12px">${promptsList || '<p class="stg-muted" style="text-align:center;padding:20px">暂无提示词</p>'}</div>
     </div>`;
   }
@@ -1275,6 +1343,7 @@ window.addEventListener('message', function(e){
         <label class="stg-field"><span>上下文深度</span><input type="number" min="0" step="1" data-stg-setting="contextDepth" value="${Number(settings.contextDepth) || 0}"></label>
         <label class="stg-field"><span>多提示词模式</span><select data-stg-setting="promptMode"><option value="merged" ${settings.promptMode === 'merged' ? 'selected' : ''}>合并为一次请求</option><option value="separate" ${settings.promptMode === 'separate' ? 'selected' : ''}>分别发送请求</option></select></label>
         <label class="stg-switch-row"><span>发送用户上一条消息</span><input type="checkbox" data-stg-setting="sendPreviousUser" ${settings.sendPreviousUser ? 'checked' : ''}><i></i></label>
+        <label class="stg-switch-row"><span>发送正文前应用酒馆启用正则</span><input type="checkbox" data-stg-setting="applyTavernRegex" ${settings.applyTavernRegex ? 'checked' : ''}><i></i></label>
         <p class="stg-muted">角色卡设定始终发送；深度为 0 时仅发送当前 AI 回复。</p>
       </div>
       <div class="stg-settings-card">
@@ -1293,10 +1362,21 @@ window.addEventListener('message', function(e){
   }
 
   function systemTab() {
+    const active = settings.systemPresets.find((preset) => preset.id === settings.activeSystemPromptId) || settings.systemPresets[0];
     return `<div class="stg-section">
-      <label class="stg-field"><span style="margin-bottom:8px;display:block">系统提示词 (发给AI的系统消息)</span><textarea data-stg-setting="systemPrompt" style="min-height:200px;resize:vertical;padding:8px;background:#0a0f14;border:1px solid var(--stg-line);color:var(--stg-text);font-size:12px;border-radius:4px">${escapeHtml(settings.systemPrompt || DEFAULT_SETTINGS.systemPrompt)}</textarea></label>
-      <p class="stg-muted">这是发给AI的系统级提示词，用于规定AI生成小剧场时的基本行为。可添加破限功能干扰以及其他要求。</p>
-      <button type="button" class="stg-command-button" data-stg-action="reset-system-prompt" style="margin-top:12px">${SVG.refresh}<span>恢复默认系统提示词</span></button>
+      <div class="stg-settings-card">
+        <div class="stg-settings-card-title">系统提示词预设</div>
+        <label class="stg-field"><span>当前预设</span><select data-stg-system-preset>${settings.systemPresets.map((preset) => `<option value="${escapeAttr(preset.id)}" ${preset.id === active?.id ? 'selected' : ''}>${escapeHtml(preset.name)}${preset.builtIn ? ' · 内置' : ''}</option>`).join('')}</select></label>
+        <div class="stg-inline-actions">
+          ${button('new-system-preset', '新建预设', SVG.plus, 'stg-small-action')}
+          ${button('duplicate-system-preset', '复制当前', SVG.copy, 'stg-small-action')}
+          ${button('delete-system-preset', '删除当前', SVG.trash, 'stg-small-action')}
+          ${button('reset-system-prompt', '恢复内置内容', SVG.refresh, 'stg-small-action')}
+        </div>
+      </div>
+      <label class="stg-field"><span>预设名称</span><input data-stg-system-preset-field="name" value="${escapeAttr(active?.name || '')}"></label>
+      <label class="stg-field"><span>系统提示词（发给 AI 的 system 消息）</span><textarea data-stg-system-preset-field="content" style="min-height:260px;resize:vertical;padding:8px;background:#0a0f14;border:1px solid var(--stg-line);color:var(--stg-text);font-size:12px;border-radius:4px">${escapeHtml(active?.content || '')}</textarea></label>
+      <p class="stg-muted">预设会自动保存。内置预设同样可以直接编辑；恢复内置内容只会重置当前内置预设。</p>
     </div>`;
   }
 
@@ -1960,6 +2040,49 @@ window.addEventListener('message', function(e){
       return;
     }
 
+    if (action === 'toggle-group') {
+      const category = actionElement.dataset.stgGroup;
+      if (!category) return;
+      const disabled = new Set(settings.disabledCategories || []);
+      if (disabled.has(category)) disabled.delete(category);
+      else disabled.add(category);
+      settings.disabledCategories = [...disabled];
+      renderTab('prompts');
+      queueSettingsSave();
+      setStatus(disabled.has(category) ? `已禁用分组“${category}”` : `已启用分组“${category}”`);
+      return;
+    }
+    if (action === 'new-system-preset') {
+      const preset = { id: `system-preset-${Date.now()}`, name: `系统提示词 ${settings.systemPresets.length + 1}`, content: DEFAULT_SYSTEM_PROMPT, builtIn: false };
+      settings.systemPresets.push(preset);
+      settings.activeSystemPromptId = preset.id;
+      settings.systemPrompt = preset.content;
+      await saveSettings();
+      renderTab('system');
+      return;
+    }
+    if (action === 'duplicate-system-preset') {
+      const current = settings.systemPresets.find((preset) => preset.id === settings.activeSystemPromptId) || settings.systemPresets[0];
+      if (!current) return;
+      const preset = { ...clone(current), id: `system-preset-${Date.now()}`, name: `${current.name} 副本`, builtIn: false };
+      settings.systemPresets.push(preset);
+      settings.activeSystemPromptId = preset.id;
+      settings.systemPrompt = preset.content;
+      await saveSettings();
+      renderTab('system');
+      return;
+    }
+    if (action === 'delete-system-preset') {
+      if (settings.systemPresets.length <= 1) return setStatus('至少保留一个系统提示词预设。', true);
+      settings.systemPresets = settings.systemPresets.filter((preset) => preset.id !== settings.activeSystemPromptId);
+      const nextPreset = settings.systemPresets[0];
+      settings.activeSystemPromptId = nextPreset.id;
+      settings.systemPrompt = nextPreset.content;
+      await saveSettings();
+      renderTab('system');
+      return;
+    }
+
     if (action === 'toggle-prompt') {
       const row = actionElement.closest('[data-stg-prompt-id]');
       const prompt = settings.prompts.find((item) => item.id === row?.dataset.stgPromptId);
@@ -2180,7 +2303,7 @@ window.addEventListener('message', function(e){
 
       let pool = settings.prompts.filter(p => p.enabled && String(p.content || '').trim());
       if (groups.length > 0) {
-        pool = pool.filter(p => groups.includes(p.category || '默认'));
+        pool = pool.filter(p => groups.includes(p.category || '默认') && !settings.disabledCategories.includes(p.category || '默认'));
       }
 
       if (!pool.length) {
@@ -2331,10 +2454,14 @@ window.addEventListener('message', function(e){
       return;
     }
     if (action === 'reset-system-prompt') {
-      settings.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
+      const current = settings.systemPresets.find((preset) => preset.id === settings.activeSystemPromptId) || settings.systemPresets[0];
+      const builtIn = DEFAULT_SYSTEM_PRESETS.find((preset) => preset.id === current?.id);
+      if (!current || !builtIn) return setStatus('当前预设不是内置预设，不能恢复内置内容。', true);
+      current.content = builtIn.content;
+      settings.systemPrompt = current.content;
       await saveSettings();
       renderTab('system');
-      setStatus('✓ 已恢复默认系统提示词');
+      setStatus('✓ 已恢复内置系统提示词');
       return;
     }
     if (action === 'clear-logs') {
@@ -2358,6 +2485,15 @@ window.addEventListener('message', function(e){
 
   async function handleChange(event) {
     const target = event.target;
+    if (target.matches('[data-stg-system-preset]')) {
+      const preset = settings.systemPresets.find((item) => item.id === target.value);
+      if (!preset) return;
+      settings.activeSystemPromptId = preset.id;
+      settings.systemPrompt = preset.content;
+      await saveSettings();
+      renderTab('system');
+      return;
+    }
     if (target.matches('[data-stg-worldbook-name]')) {
       const selected = Array.from(hostDocument.querySelectorAll('[data-stg-worldbook-name]:checked')).map(el => el.value);
       settings.selectedWorldbooks = selected;
@@ -2503,6 +2639,15 @@ window.addEventListener('message', function(e){
     }
     if (target.matches('[data-stg-setting="systemPrompt"]')) {
       settings.systemPrompt = target.value;
+      queueSettingsSave();
+      return;
+    }
+    if (target.matches('[data-stg-system-preset-field]')) {
+      const preset = settings.systemPresets.find((item) => item.id === settings.activeSystemPromptId);
+      if (!preset) return;
+      const key = target.dataset.stgSystemPresetField;
+      preset[key] = target.value;
+      if (key === 'content') settings.systemPrompt = target.value;
       queueSettingsSave();
       return;
     }
