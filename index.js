@@ -20,6 +20,7 @@
     settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19 13.5 1.4 1.1-1.8 3.1-1.7-.7a7.7 7.7 0 0 1-1.8 1l-.2 1.8h-3.6l-.2-1.8a7.7 7.7 0 0 1-1.8-1l-1.7.7-1.8-3.1L7.2 13.5a7.5 7.5 0 0 1 0-2.1L5.8 10.3l1.8-3.1 1.7.7a7.7 7.7 0 0 1 1.8-1l.2-1.8h3.6l.2 1.8a7.7 7.7 0 0 1 1.8 1l1.7-.7 1.8 3.1-1.4 1.1a7.5 7.5 0 0 1 0 2.1Z"/></svg>',
     close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>',
     refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.7-4L4 9"/><path d="M4 4v5h5M4 13a8 8 0 0 0 14.7 4L20 15"/><path d="M20 20v-5h-5"/></svg>',
+    stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>',
     edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 16-.8 4 4-.8L19 8.4a2.3 2.3 0 0 0-3.2-3.2L5 16Z"/><path d="m14.5 6.5 3 3"/></svg>',
     trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 11v6m4-6v6M8 7l.7-2h6.6l.7 2m-10 0 .8 13h11.8l.8-13"/></svg>',
     star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4 2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8L12 4Z"/></svg>',
@@ -77,14 +78,17 @@
   let requestSerial = 0;
   const pending = new Map();
   let eventsSubscribed = false;
-  let observer = null;
   let hostEventsBound = false;
   let fabResizeBound = false;
   let fabResizeHandler = null;
   let fabResizeWindow = null;
   let fabSizeSaveTimer = null;
+  let promptSaveTimer = null;
   let logRenderTimer = null;
   const logs = loadLogs();
+  const generationControllers = new Map();
+  const frameRegistry = new Map();
+  const eventUnsubscribers = [];
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -184,6 +188,14 @@
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] tavern settings save failed`, error);
     }
+  }
+
+  function queueSettingsSave() {
+    clearTimeout(promptSaveTimer);
+    promptSaveTimer = setTimeout(() => {
+      promptSaveTimer = null;
+      saveSettings();
+    }, 350);
   }
 
   function getContext() {
@@ -339,18 +351,27 @@
   }
 
   async function getCharacterContext() {
+    const pickBasicFields = (raw) => {
+      const character = raw?.data && typeof raw.data === 'object' ? { ...raw, ...raw.data } : raw;
+      if (!character || typeof character !== 'object') return '';
+      const basic = {};
+      for (const key of ['name', 'description', 'personality', 'scenario']) {
+        if (String(character[key] ?? '').trim()) basic[key] = character[key];
+      }
+      return Object.keys(basic).length ? JSON.stringify(basic, null, 2) : '';
+    };
     try {
       const getCharacter = helper('getCharacter');
       if (getCharacter) {
         const character = await getCharacter('current');
-        return JSON.stringify(character, null, 2);
+        return pickBasicFields(character);
       }
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] character read failed`, error);
     }
     const ctx = getContext();
     const current = ctx?.characters?.[ctx?.characterId] || ctx?.character;
-    return current ? JSON.stringify(current, null, 2) : '';
+    return pickBasicFields(current);
   }
 
   async function getEnabledWorldbookContext() {
@@ -413,6 +434,7 @@
   }
 
   async function buildRequest(message, messageId, promptOverride = null) {
+    const splitToken = `<<<STG_SPLIT_${Date.now()}_${Math.random().toString(36).slice(2, 10)}>>>`;
     const prompts = promptOverride ? [promptOverride] : selectedPrompts();
     const theaterPrompt = prompts.length
       ? (promptOverride
@@ -432,12 +454,13 @@
       userMessage ? `【用户上一条消息】\n${userMessage}` : '',
       `【本次 AI 回复】\n${messageText(message)}`,
       `【小剧场提示词】\n${resolvedPrompt}`,
-      '请按以下格式严格返回结果：\n【标题】≤10字的简洁标题\n【内容】\n[小剧场HTML内容]\n\n如生成多个小剧场，用 ===== 分隔：\n【标题】标题1\n【内容】\n内容1\n=====\n【标题】标题2\n【内容】\n内容2'
+      `请按以下格式严格返回结果：\n【标题】≤10字的简洁标题\n【内容】\n[小剧场HTML内容]\n\n如果需要输出多个小剧场，必须使用下面的分隔标记，并且标记必须单独占一行：\n${splitToken}\n每个分区都从【标题】开始。禁止使用 =====、----- 或其他普通符号作为分隔。`
     ].filter(Boolean).join('\n\n');
     return {
       system: settings.systemPrompt || '你是一个专门生成聊天附属小剧场的编剧和前端排版助手。严格依据给定设定，不改写原聊天，不替用户行动。输出可直接放进安全沙盒 iframe 展示的 HTML 内容。',
       user: payload,
-      prompts
+      prompts,
+      splitToken
     };
   }
 
@@ -472,14 +495,8 @@
     }
   }
 
-  async function fetchWithTimeout(url, options, timeout = 120000) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    try {
-      return await fetch(url, { ...options, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
+  async function fetchRequest(url, options, signal) {
+    return fetch(url, { ...options, ...(signal ? { signal } : {}) });
   }
 
   async function readCompletionResponse(response, onText, streamRequested) {
@@ -519,8 +536,7 @@
     return full;
   }
 
-  async function askProfile(profile, request, onText) {
-    console.log(`[${PLUGIN_ID}] [诊断] askProfile 入口`);
+  async function askProfile(profile, request, onText, signal) {
     if (!profile?.baseUrl || !profile?.model) throw new Error('请先填写 API 地址和模型名称。');
     const body = {
       model: profile.model,
@@ -532,38 +548,35 @@
         { role: 'user', content: request.user }
       ]
     };
-    console.log(`[${PLUGIN_ID}] [诊断] askProfile 参数：model=${profile.model}，stream=${profile.stream}，userContent长度=${request.user.length}`);
     let lastError = null;
     const candidates = endpointCandidates(profile.baseUrl, '/chat/completions');
-    console.log(`[${PLUGIN_ID}] [诊断] askProfile 候选URL数=${candidates.length}`);
     for (const url of candidates) {
       try {
-        console.log(`[${PLUGIN_ID}] [诊断] askProfile 尝试URL: ${url}`);
         addLog(`发送 API 请求 · ${profile.model}`, 'info', {
           url: redactUrl(url),
           method: 'POST',
           body
         }, '查看实际发送内容');
-        const response = await fetchWithTimeout(url, {
+        const response = await fetchRequest(url, {
           method: 'POST',
           headers: authHeaders(profile),
           body: JSON.stringify(body)
-        });
-        console.log(`[${PLUGIN_ID}] [诊断] askProfile 收到响应，status=${response.status}`);
+        }, signal);
         if (!response.ok) {
           lastError = new Error(`HTTP ${response.status}`);
           const errorBody = await response.text().catch(() => '');
           addLog(`API 请求失败 · HTTP ${response.status}`, 'error', errorBody, '查看返回内容');
           continue;
         }
-        console.log(`[${PLUGIN_ID}] [诊断] askProfile 即将读取响应`);
         const result = await readCompletionResponse(response, onText, Boolean(profile.stream));
-        console.log(`[${PLUGIN_ID}] [诊断] askProfile 响应读取完成，长度=${result.length}`);
         addLog(`API 返回成功 · ${result.length} 字`, 'success', result, '查看完整返回内容');
         return result;
       } catch (error) {
         console.warn(`[${PLUGIN_ID}] [诊断] askProfile 请求异常: ${error.message}`);
-        addLog(`API 请求异常 · ${error.message || error}`, 'error', `请求地址：${redactUrl(url)}\n\n${error.stack || error}`, '查看错误详情');
+        if (error?.name === 'AbortError') throw error;
+        if (error?.name !== 'AbortError') {
+          addLog(`API 请求异常 · ${error.message || error}`, 'error', `请求地址：${redactUrl(url)}\n\n${error.stack || error}`, '查看错误详情');
+        }
         lastError = error;
       }
     }
@@ -574,7 +587,7 @@
     let lastError = null;
     for (const url of endpointCandidates(profile?.baseUrl, '/models')) {
       try {
-        const response = await fetchWithTimeout(url, { headers: authHeaders(profile) }, 30000);
+        const response = await fetchRequest(url, { headers: authHeaders(profile) });
         if (!response.ok) {
           lastError = new Error(`HTTP ${response.status}`);
           continue;
@@ -593,18 +606,20 @@
   }
 
   async function generateForMessage(messageId, options = {}) {
-    console.log(`[${PLUGIN_ID}] [诊断] generateForMessage 入口，messageId=${messageId}，当前pending数=${pending.size}`);
     const message = getMessage(messageId);
     if (!isAssistantMessage(message)) {
-      console.log(`[${PLUGIN_ID}] [诊断] 消息不是AI消息，跳过`);
       return false;
     }
     if (!selectedPrompts().length) return setStatus('请先在提示词库中选择至少一条启用提示词。', true);
     const profile = activeProfile();
     if (!profile?.baseUrl || !profile?.apiKey || !profile?.model) return setStatus('请先在 API 设置中填写地址、Key 和模型。', true);
+    const numericMessageId = Number(messageId);
+    generationControllers.get(numericMessageId)?.abort();
+    const controller = new AbortController();
     const serial = ++requestSerial;
-    pending.set(Number(messageId), serial);
-    console.log(`[${PLUGIN_ID}] [诊断] 新建请求 serial=${serial}，messageId=${messageId}，pending数=${pending.size}`);
+    pending.set(numericMessageId, serial);
+    generationControllers.set(numericMessageId, controller);
+    syncGenerationControls();
 
     const startText = options.manual ? '正在重新生成小剧场…' : '正在生成小剧场…';
     setStatus(startText);
@@ -612,74 +627,70 @@
     addLog(`${options.manual ? '手动' : '自动'}生成开始 · 消息 #${messageId}`, 'info');
 
     try {
-      console.log(`[${PLUGIN_ID}] [诊断] 开始 buildRequest`);
       const request = await buildRequest(message, messageId);
-      console.log(`[${PLUGIN_ID}] [诊断] buildRequest 完成，prompts=${request.prompts.length}个`);
-      const contents = [];
+      const responses = [];
       if (settings.promptMode === 'separate' && request.prompts.length > 1) {
-        console.log(`[${PLUGIN_ID}] [诊断] 分别请求模式`);
         for (const prompt of request.prompts) {
           const singleRequest = await buildRequest(message, messageId, prompt);
-          console.log(`[${PLUGIN_ID}] [诊断] 单个 prompt="${prompt.name}" 请求前，即将调用 askProfile`);
-          contents.push(await askProfile(profile, singleRequest, (partial) => {
+          responses.push({ text: await askProfile(profile, singleRequest, (partial) => {
             const text = `正在生成小剧场… ${partial.length} 字`;
             setStatus(text);
             setGenerationProgress(messageId, text, 'loading');
-          }));
-          console.log(`[${PLUGIN_ID}] [诊断] 单个 prompt="${prompt.name}" 请求完成`);
+          }, controller.signal), splitToken: singleRequest.splitToken, promptNames: [prompt.name] });
         }
       } else {
-        console.log(`[${PLUGIN_ID}] [诊断] 合并请求模式`);
-        contents.push(await askProfile(profile, request, (partial) => {
+        responses.push({ text: await askProfile(profile, request, (partial) => {
           const text = `正在生成小剧场… ${partial.length} 字`;
           setStatus(text);
           setGenerationProgress(messageId, text, 'loading');
-        }));
-        console.log(`[${PLUGIN_ID}] [诊断] askProfile 完成`);
+        }, controller.signal), splitToken: request.splitToken, promptNames: request.prompts.map((prompt) => prompt.name) });
       }
       if (pending.get(Number(messageId)) !== serial) {
-        console.log(`[${PLUGIN_ID}] [诊断] 请求被替换，当前serial=${pending.get(Number(messageId))}，预期=${serial}，跳过保存`);
         return false;
       }
 
-      // 从返回内容中提取单个小剧场（用===== 分隔）
-      const extractTheaters = (fullResponse) => {
-        console.log(`[${PLUGIN_ID}] [日志] AI返回内容长度=${fullResponse.length}，前200字:\n${fullResponse.slice(0, 200)}`);
-        const parts = fullResponse.split(/\s*=====\s*/);
-        console.log(`[${PLUGIN_ID}] [日志] 按=====分隔后得到${parts.length}个部分`);
-        return parts.map((part, idx) => {
+      const extractTheaters = (fullResponse, token) => {
+        const partsByToken = [];
+        const source = String(fullResponse || '');
+        const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const markerRegex = token
+          ? new RegExp(`^[\\t ]*${escapeRegex(token)}[\\t ]*$`, 'gm')
+          : null;
+        let parts = markerRegex ? source.split(markerRegex) : [source];
+        if (parts.length === 1) {
+          // 兼容旧版本已经发出的 ===== 协议，但只接受独立一行，避免正文误切。
+          parts = source.split(/^[\t ]*={5,}[\t ]*$/gm);
+        }
+        return parts.map((part) => {
           const titleMatch = part.match(/【标题】\s*(.+?)(?=【内容】|$)/s);
           const contentMatch = part.match(/【内容】\s*([\s\S]*)/);
           const title = titleMatch ? titleMatch[1].trim().slice(0, 20) : '小剧场';
           const content = contentMatch ? contentMatch[1].trim() : part;
-          console.log(`[${PLUGIN_ID}] [日志] 部分${idx}: 标题="${title}", 内容长度=${content.length}`);
           return { title, content };
         }).filter((item) => item.content.trim().length > 0);
       };
 
-      const itemsData = contents.map((response) => extractTheaters(response)).flat();
-      console.log(`[${PLUGIN_ID}] [日志] 最终提取到${itemsData.length}个小剧场`);
+      const itemsData = responses.flatMap(({ text, splitToken, promptNames }) =>
+        extractTheaters(text, splitToken).map((item) => ({ ...item, promptNames }))
+      );
 
       const old = getMessageRecord(message) || {};
       // 关键：保留旧的favorites，重新生成时不覆盖已收藏的小剧场
       const favorites = old.favorites && Array.isArray(old.favorites) ? old.favorites : [];
 
-      console.log(`[${PLUGIN_ID}] [日志] 准备创建record: itemsData.length=${itemsData.length}, favorites.length=${favorites.length}`);
 
+      const generatedItems = itemsData.map((data) => newItem(data.content, data.promptNames, data.title));
       const record = {
         version: 1,
-        current: itemsData[0] ? newItem(itemsData[0].content, request.prompts.map((prompt) => prompt.name), itemsData[0].title) : null,
-        items: itemsData.map((data) => newItem(data.content, request.prompts.map((prompt) => prompt.name), data.title)),
+        current: generatedItems[0] || null,
+        items: generatedItems,
         favorites: favorites,
         active: null,
         updatedAt: new Date().toISOString()
       };
       if (record.current) record.items[0] = record.current;
-      record.active = record.current?.id || record.favorites[0]?.id || 'current';
-      console.log(`[${PLUGIN_ID}] [日志] record创建完成: items=${record.items.length}, current=${record.current?.title || 'null'}`);
-      console.log(`[${PLUGIN_ID}] [诊断] 即将 saveMessageRecord`);
+      record.active = record.current?.id || '';
       await saveMessageRecord(message, record);
-      console.log(`[${PLUGIN_ID}] [诊断] saveMessageRecord 完成，即将 renderMessageTheater`);
       renderMessageTheater(Number(messageId));
       setStatus('小剧场已更新。');
       setGenerationProgress(messageId, '生成完成', 'success');
@@ -687,16 +698,24 @@
       return true;
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] generation failed`, error);
-      if (pending.get(Number(messageId)) === serial) {
+      if (error?.name === 'AbortError') {
+        if (pending.get(numericMessageId) === serial) {
+          setStatus('已停止生成。');
+          setGenerationProgress(messageId, '已停止生成', 'stopped');
+          addLog(`生成已停止 · 消息 #${messageId}`, 'warn');
+        }
+      } else if (pending.get(numericMessageId) === serial) {
         setStatus(`生成失败：${error.message || error}`, true);
         setGenerationProgress(messageId, `生成失败：${error.message || error}`, 'error');
       }
-      addLog(`生成失败 · 消息 #${messageId}`, 'error', error.stack || String(error), '查看错误详情');
+      if (error?.name !== 'AbortError') addLog(`生成失败 · 消息 #${messageId}`, 'error', error.stack || String(error), '查看错误详情');
       return false;
     } finally {
-      console.log(`[${PLUGIN_ID}] [诊断] generateForMessage 出口，messageId=${messageId}，即将删除pending`);
-      if (pending.get(Number(messageId)) === serial) pending.delete(Number(messageId));
-      console.log(`[${PLUGIN_ID}] [诊断] pending 已删除，当前pending数=${pending.size}`);
+      if (pending.get(numericMessageId) === serial) {
+        pending.delete(numericMessageId);
+        if (generationControllers.get(numericMessageId) === controller) generationControllers.delete(numericMessageId);
+      }
+      syncGenerationControls();
     }
   }
 
@@ -854,21 +873,25 @@ window.addEventListener('message', function(e){
 });
 </script></body></html>`;
 
-    let heightSet = false;
-    const handleMessage = (e) => {
-      if (!heightSet && e.data?.type === 'stg-frame-height' && e.data?.frameId === frameId && typeof e.data.height === 'number') {
-        heightSet = true;
-        iframe.style.minHeight = Math.max(180, e.data.height + 32) + 'px';
-      }
-      if (e.data?.type === 'stg-frame-height' && e.data?.frameId === frameId) {
-        iframe.style.minHeight = Math.max(180, e.data.height + 32) + 'px';
-      }
-    };
-
-    hostWindow.addEventListener('message', handleMessage);
     iframe.dataset.stgFrameId = frameId;
     iframe.stgImagePrompts = prompts;
+    frameRegistry.forEach((registeredFrame, registeredId) => {
+      if (!registeredFrame.isConnected) frameRegistry.delete(registeredId);
+    });
+    frameRegistry.set(frameId, iframe);
     return iframe;
+  }
+
+  function handleFrameMessage(event) {
+    if (event.data?.type !== 'stg-frame-height' || typeof event.data.height !== 'number') return;
+    const iframe = frameRegistry.get(event.data.frameId);
+    if (!iframe) return;
+    if (!iframe.isConnected) {
+      frameRegistry.delete(event.data.frameId);
+      return;
+    }
+    if (event.source !== iframe.contentWindow) return;
+    iframe.style.minHeight = `${Math.max(180, event.data.height + 32)}px`;
   }
 
   function publishImagePrompts(container, iframe) {
@@ -908,18 +931,18 @@ window.addEventListener('message', function(e){
 
   function activeRecordItem(record) {
     if (!record) return null;
-    // 如果active指定了某个item的id，从items或favorites中查找
-    if (record.active && record.active !== 'current') {
-      const found = (record.items || []).find((item) => item.id === record.active) ||
-                    (record.favorites || []).find((item) => item.id === record.active);
+    const items = generatedRecordItems(record);
+    if (record.active) {
+      const found = items.find((item) => item.id === record.active);
       if (found) return found;
     }
-    // 否则返回current或items[0]
-    return record.current || record.items?.[0] || record.favorites?.[0] || null;
+    return items.find((item) => item.id === record.current?.id) || items[0] || null;
   }
 
-  function recordItemIds(record) {
-    return new Set((record?.items || []).map((item) => item.id));
+  function generatedRecordItems(record) {
+    const items = Array.isArray(record?.items) ? record.items.filter(Boolean) : [];
+    if (record?.current && !items.some((item) => item.id === record.current.id)) items.unshift(record.current);
+    return items;
   }
 
   function isRecordItemFavorite(record, itemId) {
@@ -927,7 +950,7 @@ window.addEventListener('message', function(e){
   }
 
   function firstRecordItemId(record) {
-    return record?.items?.[0]?.id || record?.favorites?.[0]?.id || 'current';
+    return generatedRecordItems(record)[0]?.id || '';
   }
 
   function hasTheaterRecord(record) {
@@ -947,16 +970,18 @@ window.addEventListener('message', function(e){
     const record = getMessageRecord(message);
     const host = findMessageElement(messageId);
     if (!host) return;
-    console.log(`[${PLUGIN_ID}] [日志] renderMessageTheater: messageId=${messageId}, record.items=${record?.items?.length || 0}, record.favorites=${record?.favorites?.length || 0}`);
     const old = [...host.querySelectorAll('.stg-message-theater')]
       .find((element) => element.dataset.stgMessageId === String(messageId));
-    if (!hasTheaterRecord(record)) {
+    const generatedItems = generatedRecordItems(record);
+    if (!generatedItems.length) {
+      if (pending.has(Number(messageId))) return;
       old?.remove();
       return;
     }
 
     const box = old || hostDocument.createElement('section');
     box.className = 'stg-message-theater stg-theater-window';
+    delete box.dataset.stgPendingOnly;
     box.dataset.stgRole = 'message-theater';
     box.dataset.stgMessageId = String(messageId);
     const item = activeRecordItem(record);
@@ -965,28 +990,23 @@ window.addEventListener('message', function(e){
     const isFavorite = isRecordItemFavorite(record, item?.id);
     const activeId = item?.id || firstRecordItemId(record);
 
-    // 构建下拉菜单：显示所有小剧场版本
-    const choices = [];
+    const choices = generatedItems.map((generatedItem, index) => ({
+      id: generatedItem.id,
+      label: generatedItems.length > 1 ? `${index + 1}. ${generatedItem.title || '小剧场'}` : (generatedItem.title || '小剧场')
+    }));
 
-    // 添加所有items（包括current）
-    if (record.items && record.items.length > 0) {
-      record.items.forEach((itm, idx) => {
-        const isCurrent = itm.id === record.current?.id;
-        const label = isCurrent ? `当前: ${itm.title || '小剧场'}` : `${itm.title || '小剧场'} (v${idx + 1})`;
-        choices.push({ id: itm.id, label });
-      });
+    const renderSignature = JSON.stringify([
+      item?.id,
+      item?.content,
+      isFavorite,
+      choices.map((choice) => [choice.id, choice.label])
+    ]);
+    if (old?.dataset.stgRenderSignature === renderSignature) {
+      syncGenerationControls();
+      return;
     }
+    box.dataset.stgRenderSignature = renderSignature;
 
-    // 添加收藏
-    const generatedIds = recordItemIds(record);
-    if (record.favorites && record.favorites.length > 0) {
-      record.favorites.forEach((fav, idx) => {
-        if (generatedIds.has(fav.id)) return;
-        choices.push({ id: fav.id, label: `💾 ${fav.title || '收藏'} ${idx + 1}` });
-      });
-    }
-
-    console.log(`[${PLUGIN_ID}] [日志] choices.length=${choices.length}`);
 
 
     box.innerHTML = `
@@ -997,6 +1017,7 @@ window.addEventListener('message', function(e){
           ${button('favorite', isFavorite ? '取消收藏' : '收藏', SVG.star, isFavorite ? 'is-active' : '')}
           ${button('edit', '编辑', SVG.edit)}
           ${button('regenerate', '重新生成', SVG.refresh)}
+          ${button('stop-generation', '停止生成', SVG.stop, 'stg-stop-button', 'hidden')}
           ${button('delete', '删除此条', SVG.trash)}
           ${button('fold', '折叠', SVG.chevron)}
         </div>
@@ -1023,6 +1044,7 @@ window.addEventListener('message', function(e){
     const editor = box.querySelector('[data-stg-field="edit-content"]');
     if (editor) editor.value = item?.content || '';
     if (!old) theaterMountPoint(host).appendChild(box);
+    syncGenerationControls();
     box.querySelector('[data-stg-action="fold"]')?.classList.toggle('is-active', box.classList.contains('is-folded'));
     if (box.classList.contains('is-folded')) box.querySelector('.stg-theater-body').hidden = true;
   }
@@ -1099,20 +1121,6 @@ window.addEventListener('message', function(e){
     if (tab === 'api') body.innerHTML = apiTab();
     if (tab === 'prompts') {
       body.innerHTML = promptsTab();
-      setTimeout(() => {
-        const enabledCheckbox = hostDocument.getElementById('stg-random-enabled');
-        if (enabledCheckbox) {
-          enabledCheckbox.addEventListener('change', async (e) => {
-            if (!e.target.checked) {
-              settings.randomMode = { enabled: false, group: '', count: 1 };
-            } else {
-              settings.randomMode = { enabled: true, group: settings.randomMode?.group || '', count: settings.randomMode?.count || 1 };
-            }
-            await saveSettings();
-            renderTab('prompts');
-          });
-        }
-      }, 0);
     }
     if (tab === 'context') {
       body.innerHTML = contextTab();
@@ -1122,6 +1130,7 @@ window.addEventListener('message', function(e){
     if (tab === 'logs') body.innerHTML = logsTab();
     if (tab === 'history') body.innerHTML = historyTab();
     if (tab === 'favorites') body.innerHTML = favoritesTab();
+    syncGenerationControls();
   }
 
   function generalTab() {
@@ -1133,6 +1142,7 @@ window.addEventListener('message', function(e){
         <label class="stg-switch-row"><span>全局自动生成</span><input type="checkbox" data-stg-setting="autoEnabled" ${settings.autoEnabled ? 'checked' : ''}><i></i></label>
         <label class="stg-field"><span>当前聊天</span><select data-stg-chat-toggle><option value="inherit" ${override === 'inherit' ? 'selected' : ''}>跟随全局</option><option value="true" ${override === 'true' ? 'selected' : ''}>单独启用</option><option value="false" ${override === 'false' ? 'selected' : ''}>单独关闭</option></select></label>
         <button type="button" class="stg-command-button" data-stg-action="generate-current">${SVG.play}<span>手动生成当前 AI 回复</span></button>
+        <button type="button" class="stg-command-button stg-stop-command" data-stg-action="stop-generation" hidden>${SVG.stop}<span>停止正在生成</span></button>
         <p class="stg-muted">结果显示在对应 AI 消息下方。</p>
       </div>
 
@@ -1517,7 +1527,22 @@ window.addEventListener('message', function(e){
       fab.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
     }
 
-    const theater = findMessageElement(messageId)?.querySelector(`.stg-message-theater[data-stg-message-id="${CSS.escape(String(messageId))}"]`);
+    const messageHost = findMessageElement(messageId);
+    let theater = messageHost?.querySelector(`.stg-message-theater[data-stg-message-id="${CSS.escape(String(messageId))}"]`);
+    if (!theater && state === 'loading' && messageHost) {
+      theater = hostDocument.createElement('section');
+      theater.className = 'stg-message-theater stg-theater-window is-generating';
+      theater.dataset.stgRole = 'message-theater';
+      theater.dataset.stgMessageId = String(messageId);
+      theater.dataset.stgPendingOnly = 'true';
+      theater.innerHTML = `
+        <header class="stg-theater-header">
+          <span class="stg-theater-title">${SVG.theater}<span>小剧场</span></span>
+          <div class="stg-theater-tools">${button('stop-generation', '停止生成', SVG.stop, 'stg-stop-button')}</div>
+        </header>
+        <div class="stg-theater-body"><div class="stg-theater-progress" data-stg-generation-status></div></div>`;
+      theaterMountPoint(messageHost).appendChild(theater);
+    }
     if (theater) {
       let progress = theater.querySelector('[data-stg-generation-status]');
       if (!progress) {
@@ -1531,6 +1556,8 @@ window.addEventListener('message', function(e){
       progress.dataset.state = state;
       theater.classList.toggle('is-generating', state === 'loading');
       theater.querySelector('[data-stg-action="regenerate"]')?.toggleAttribute('disabled', state === 'loading');
+      const stopButton = theater.querySelector('[data-stg-action="stop-generation"]');
+      if (stopButton) stopButton.hidden = state !== 'loading';
     }
 
     if (state !== 'loading') {
@@ -1548,9 +1575,30 @@ window.addEventListener('message', function(e){
           currentProgress.hidden = true;
           currentTheater.classList.remove('is-generating');
           currentTheater.querySelector('[data-stg-action="regenerate"]')?.removeAttribute('disabled');
+          currentTheater.querySelector('[data-stg-action="stop-generation"]')?.setAttribute('hidden', '');
+          if (currentTheater.dataset.stgPendingOnly === 'true') currentTheater.remove();
         }
       }, delay);
     }
+    syncGenerationControls();
+  }
+
+  function syncGenerationControls() {
+    const activeIds = new Set(pending.keys());
+    root?.querySelector('[data-stg-action="stop-generation"].stg-stop-command')?.toggleAttribute('hidden', activeIds.size === 0);
+    root?.querySelectorAll('.stg-message-theater').forEach((theater) => {
+      const messageId = Number(theater.dataset.stgMessageId);
+      const stopButton = theater.querySelector('[data-stg-action="stop-generation"]');
+      if (stopButton) stopButton.hidden = !activeIds.has(messageId);
+    });
+  }
+
+  function stopGeneration(messageId = null) {
+    if (Number.isFinite(Number(messageId))) {
+      generationControllers.get(Number(messageId))?.abort();
+      return;
+    }
+    generationControllers.forEach((controller) => controller.abort());
   }
 
   function applyFabSize(value) {
@@ -1618,23 +1666,11 @@ window.addEventListener('message', function(e){
 
   function positionPanel() {
     if (!panel || panel.hidden) return;
-    const viewport = panel.ownerDocument?.defaultView || hostWindow;
-    const visualViewport = viewport.visualViewport;
-    const viewportWidth = visualViewport?.width || viewport.innerWidth;
-    const viewportHeight = visualViewport?.height || viewport.innerHeight;
-    const offsetLeft = visualViewport?.offsetLeft || 0;
-    const offsetTop = visualViewport?.offsetTop || 0;
-    const panelWidth = panel.offsetWidth;
-    const panelHeight = panel.offsetHeight;
-    if (!panelWidth || !panelHeight) return;
-    const margin = 12;
-    const left = offsetLeft + Math.max(margin, (viewportWidth - panelWidth) / 2);
-    const top = offsetTop + Math.max(margin, (viewportHeight - panelHeight) / 2);
-    panel.style.left = `${Math.round(left)}px`;
-    panel.style.top = `${Math.round(top)}px`;
+    panel.style.left = '50%';
+    panel.style.top = '50%';
     panel.style.right = 'auto';
     panel.style.bottom = 'auto';
-    panel.style.transform = 'none';
+    panel.style.transform = 'translate(-50%, -50%)';
   }
 
   function ensureFab() {
@@ -1668,6 +1704,7 @@ window.addEventListener('message', function(e){
       border: none;
       background: linear-gradient(135deg, #1a4d45, #0d2a27);
       color: #c7f3e3;
+      outline: none;
       cursor: pointer;
       font-size: 20px;
       padding: 0;
@@ -1679,14 +1716,6 @@ window.addEventListener('message', function(e){
       transition: transform 0.25s ease;
       box-shadow: none;
     `;
-      console.log('[FAB] 已创建，位置:', {
-        bottom: fab.style.bottom,
-        right: fab.style.right,
-        zIndex: fab.style.zIndex,
-        display: window.getComputedStyle(fab).display,
-        visibility: window.getComputedStyle(fab).visibility
-      });
-
     fab.style.position = 'fixed';
     fab.style.zIndex = '2147483647';
     fab.style.display = 'grid';
@@ -1826,7 +1855,6 @@ window.addEventListener('message', function(e){
       fabResizeWindow = fab.ownerDocument?.defaultView || hostWindow;
       fabResizeWindow.addEventListener('resize', fabResizeHandler);
       fabResizeWindow.visualViewport?.addEventListener('resize', fabResizeHandler);
-      fabResizeWindow.visualViewport?.addEventListener('scroll', fabResizeHandler);
       fabResizeBound = true;
     }
     positionFab();
@@ -1899,6 +1927,11 @@ window.addEventListener('message', function(e){
     const action = actionElement.dataset.stgAction;
     if (action === 'toggle-panel') return togglePanel();
     if (action === 'close-panel') return togglePanel(false);
+    if (action === 'stop-generation') {
+      const theater = actionElement.closest('.stg-message-theater');
+      stopGeneration(theater ? Number(theater.dataset.stgMessageId) : null);
+      return;
+    }
     if (action === 'generate-current') {
       const last = findLastAssistant();
       if (last) await generateForMessage(last.id, { manual: true });
@@ -2012,12 +2045,12 @@ window.addEventListener('message', function(e){
         await updateRecord(messageId, (next) => {
           const item = activeRecordItem(next);
           if (!item) return next;
+          next.items = generatedRecordItems(next);
           const itemIndex = (next.items || []).findIndex((generatedItem) => generatedItem.id === item.id);
           if (itemIndex >= 0) {
             next.items = next.items.filter((generatedItem) => generatedItem.id !== item.id);
-            next.favorites = (next.favorites || []).filter((favorite) => favorite.id !== item.id);
             next.current = next.items[0] || null;
-            next.active = next.items[itemIndex]?.id || next.items[itemIndex - 1]?.id || next.favorites?.[0]?.id || 'current';
+            next.active = next.items[itemIndex]?.id || next.items[itemIndex - 1]?.id || firstRecordItemId(next);
           } else {
             next.favorites = (next.favorites || []).filter((favorite) => favorite.id !== item.id);
             next.active = firstRecordItemId(next);
@@ -2242,8 +2275,6 @@ window.addEventListener('message', function(e){
         const message = getMessage(messageId);
         const record = getMessageRecord(message);
         if (record && favoriteId) {
-          record.active = favoriteId;
-          await saveMessageRecord(message, record);
           showFavoriteModal(favoriteId, record, messageId);
         }
       }
@@ -2420,7 +2451,7 @@ window.addEventListener('message', function(e){
       if (!prompt) return;
       const key = target.dataset.stgPromptField;
       prompt[key] = target.type === 'checkbox' ? target.checked : (target.type === 'number' ? Number(target.value) : target.value);
-      await saveSettings();
+      queueSettingsSave();
       return;
     }
     const select = target.closest('[data-stg-field="active-item"]');
@@ -2444,7 +2475,7 @@ window.addEventListener('message', function(e){
     }
     if (target.matches('[data-stg-setting="systemPrompt"]')) {
       settings.systemPrompt = target.value;
-      saveSettings();
+      queueSettingsSave();
     }
   }
 
@@ -2456,95 +2487,65 @@ window.addEventListener('message', function(e){
 
   function subscribeEvents() {
     if (eventsSubscribed) {
-      console.log(`[${PLUGIN_ID}] [诊断] subscribeEvents 已绑定过，跳过`);
       return true;
     }
     const ctx = getContext();
     const events = getEventSource(ctx);
     const types = getEventTypes(ctx);
-    console.log(`[${PLUGIN_ID}] [诊断] subscribeEvents 开始，events=${!!events}，types=${!!types}`);
     if (!events?.on || !types) {
-      console.log(`[${PLUGIN_ID}] [诊断] subscribeEvents 缺少事件系统，返回false`);
       return false;
     }
     const on = (name, handler) => {
       if (name) {
         try {
-          console.log(`[${PLUGIN_ID}] [诊断] subscribeEvents 绑定事件: ${name}`);
           events.on(name, handler);
+          if (typeof events.off === 'function') eventUnsubscribers.push(() => events.off(name, handler));
         } catch (error) {
           console.warn(`[${PLUGIN_ID}] event subscribe failed`, name, error);
         }
       }
     };
     on(types.APP_READY, () => {
-      console.log(`[${PLUGIN_ID}] [诊断] APP_READY 事件触发`);
       fire();
     });
     on(types.MESSAGE_RECEIVED, async (messageId, type) => {
-      console.log(`[${PLUGIN_ID}] [诊断] MESSAGE_RECEIVED 触发，messageId=${messageId}，type=${type}`);
       const allowed = ['normal', 'regenerate', 'swipe', 'first_message'];
       if (!allowed.includes(type)) {
-        console.log(`[${PLUGIN_ID}] [诊断] type="${type}" 不在允许列表中，跳过`);
         return;
       }
       const autoEnabled = getChatAutoEnabled();
-      console.log(`[${PLUGIN_ID}] [诊断] 自动生成已启用=${autoEnabled}`);
       if (!autoEnabled) {
-        console.log(`[${PLUGIN_ID}] [诊断] 自动生成被禁用，跳过`);
         return;
       }
-      console.log(`[${PLUGIN_ID}] [诊断] 准备调用 generateForMessage(${messageId})`);
       await generateForMessage(Number(messageId));
     });
     on(types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
-      console.log(`[${PLUGIN_ID}] [诊断] CHARACTER_MESSAGE_RENDERED 触发，messageId=${messageId}`);
       renderMessageTheater(Number(messageId));
     });
     on(types.MESSAGE_UPDATED, (messageId) => {
-      console.log(`[${PLUGIN_ID}] [诊断] MESSAGE_UPDATED 触发，messageId=${messageId}`);
       renderMessageTheater(Number(messageId));
     });
     on(types.CHAT_CHANGED, () => {
-      console.log(`[${PLUGIN_ID}] [诊断] CHAT_CHANGED 触发`);
       setTimeout(() => {
         renderAllStoredTheaters();
         // 不要重置tab，保持用户当前的tab选择（比如收藏库）
       }, 200);
     });
     eventsSubscribed = true;
-    console.log(`[${PLUGIN_ID}] [诊断] subscribeEvents 完成`);
     return true;
   }
 
   function init() {
-    console.log(`[${PLUGIN_ID}] [诊断] init 入口`);
     if (!hostDocument.body) {
-      console.log(`[${PLUGIN_ID}] [诊断] hostDocument.body 不存在，返回false`);
       return false;
     }
     try {
-      console.log(`[${PLUGIN_ID}] [诊断] 调用 ensureHostStyles`);
       ensureHostStyles();
-      console.log(`[${PLUGIN_ID}] [诊断] 调用 mountUI`);
       if (!mountUI()) {
-        console.log(`[${PLUGIN_ID}] [诊断] mountUI 失败`);
         return false;
       }
-      console.log(`[${PLUGIN_ID}] [诊断] 调用 subscribeEvents`);
       subscribeEvents();
-      console.log(`[${PLUGIN_ID}] [诊断] 调用 renderAllStoredTheaters`);
       renderAllStoredTheaters();
-      setTimeout(renderAllStoredTheaters, 700);
-      if (!observer && typeof hostWindow.MutationObserver === 'function') {
-        console.log(`[${PLUGIN_ID}] [诊断] 创建 MutationObserver`);
-        observer = new hostWindow.MutationObserver(() => {
-          // 仅用于检测聊天区域是否被加载，不主动触发renderAllStoredTheaters
-          // 避免无限循环和闪烁问题
-        });
-        observer.observe(hostDocument.body, { childList: true, subtree: true });
-      }
-      console.log(`[${PLUGIN_ID}] [诊断] init 完成，返回true`);
       return true;
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] init failed`, error);
@@ -2553,7 +2554,6 @@ window.addEventListener('message', function(e){
   }
 
   let initialized = false;
-  let mutationObserverTimer = null;
   const fire = () => {
     if (initialized) {
       ensureFab();
@@ -2662,15 +2662,20 @@ window.addEventListener('message', function(e){
     insertImage: (imageTokens, imageHtml) => insertGeneratedImage(imageTokens, imageHtml) > 0,
     insertImages: (items) => insertGeneratedImage(items),
     destroy: () => {
-      clearTimeout(mutationObserverTimer);
-      mutationObserverTimer = null;
-      observer?.disconnect?.();
-      observer = null;
+      clearTimeout(promptSaveTimer);
+      promptSaveTimer = null;
+      generationControllers.forEach((controller) => controller.abort());
+      generationControllers.clear();
+      pending.clear();
+      frameRegistry.clear();
+      eventUnsubscribers.splice(0).forEach((unsubscribe) => {
+        try { unsubscribe(); } catch {}
+      });
+      eventsSubscribed = false;
       unbindHostEvents();
       if (fabResizeHandler) {
         fabResizeWindow?.removeEventListener('resize', fabResizeHandler);
         fabResizeWindow?.visualViewport?.removeEventListener('resize', fabResizeHandler);
-        fabResizeWindow?.visualViewport?.removeEventListener('scroll', fabResizeHandler);
         fabResizeHandler = null;
         fabResizeWindow = null;
       }
@@ -2684,6 +2689,7 @@ window.addEventListener('message', function(e){
       });
       hostDocument.removeEventListener('stage-theater:image-ready', handleImageReady);
       hostDocument.removeEventListener('stg-image-ready', handleImageReady);
+      hostWindow.removeEventListener('message', handleFrameMessage);
       hostWindow.removeEventListener('message', handleImageMessage);
       if (hostWindow[INSTANCE_KEY] === instance) delete hostWindow[INSTANCE_KEY];
       if (hostWindow.stageTheaterImageBridge === instance) delete hostWindow.stageTheaterImageBridge;
@@ -2701,6 +2707,7 @@ window.addEventListener('message', function(e){
 
   hostDocument.addEventListener('stage-theater:image-ready', handleImageReady);
   hostDocument.addEventListener('stg-image-ready', handleImageReady);
+  hostWindow.addEventListener('message', handleFrameMessage);
   hostWindow.addEventListener('message', handleImageMessage);
   hostWindow[INSTANCE_KEY] = instance;
   hostWindow.stageTheaterImageBridge = instance;

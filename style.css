@@ -14,6 +14,8 @@
 
 #stg-root *,#stg-root *::before,#stg-root *::after { box-sizing: border-box; }
 
+#stg-root [hidden], .stg-message-theater [hidden] { display: none !important; }
+
 #stg-root svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.15em; }
 
 /* 全局输入框和选择框统一配色 */
@@ -95,7 +97,9 @@
 .stg-panel {
   position: fixed; left: 50%; top: 50%; right: auto; bottom: auto; z-index: 2000000;
   transform: translate(-50%, -50%);
-  width: min(430px, calc(100vw - 24px)); max-height: min(730px, calc(100vh - 100px));
+  display: flex; flex-direction: column;
+  width: min(430px, calc(100vw - 24px));
+  height: min(730px, calc(100dvh - 24px)); max-height: calc(100dvh - 24px);
   overflow: hidden; border: 1px solid var(--stg-line); border-radius: 12px;
   background: linear-gradient(180deg, #182d31 0%, #12191f 100%);
   box-shadow: 0 20px 60px #0010, inset 0 1px 0 #ffffff08;
@@ -155,8 +159,8 @@
 }
 
 .stg-panel-body {
-  max-height: calc(min(730px, 100vh - 100px) - 112px);
-  overflow: auto;
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain; scrollbar-gutter: stable;
 }
 
 .stg-section { display: grid; gap: 12px; padding: 15px; }
@@ -206,11 +210,14 @@
 }
 
 .stg-switch-row {
-  display: flex; align-items: center;
+  position: relative; display: flex; align-items: center;
   justify-content: space-between; gap: 12px; color: var(--stg-text);
 }
 
-.stg-switch-row input { position: absolute; opacity: 0; }
+.stg-switch-row input {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
+  opacity: 0; cursor: pointer;
+}
 
 .stg-switch-row i {
   position: relative; width: 38px; height: 21px; flex: 0 0 auto;
@@ -303,11 +310,14 @@
 .stg-worldbook-name { min-width: 0; overflow-wrap: anywhere; line-height: 1.35; }
 
 .stg-check {
-  display: grid; place-items: center;
+  position: relative; display: grid; place-items: center;
   width: 25px; height: 27px; cursor: pointer; flex-shrink: 0;
 }
 
-.stg-check input { position: absolute; opacity: 0; }
+.stg-check input {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
+  opacity: 0; cursor: pointer;
+}
 
 .stg-check span {
   width: 15px; height: 15px;
@@ -427,7 +437,7 @@
 
 .stg-model-item.selected { background: var(--stg-accent); color: #0a0f14; font-weight: 600; }
 
-.stg-logs { display: flex; flex-direction: column; min-height: 360px; max-height: calc(100vh - 190px); }
+.stg-logs { display: flex; flex-direction: column; min-height: 360px; max-height: calc(100dvh - 190px); }
 
 .stg-log-toolbar {
   display: flex; align-items: center; gap: 7px; padding: 10px 12px;
@@ -465,8 +475,8 @@
 
 dialog.stg-modal {
   display: block; width: min(780px, calc(100vw - 40px));
-  height: min(680px, calc(100vh - 56px));
-  max-height: calc(100vh - 40px); margin: auto; padding: 0;
+  height: min(680px, calc(100dvh - 56px));
+  max-height: calc(100dvh - 40px); margin: auto; padding: 0;
   overflow: hidden; border: 1px solid #49615f; border-radius: 12px;
   color: var(--stg-text); background: var(--stg-panel);
   box-shadow: 0 24px 80px #000d;
@@ -488,7 +498,7 @@ dialog.stg-modal::backdrop {
 .stg-modal-content .stg-theater-frame { min-height: 100%; }
 
 @media (max-width: 560px) {
-  .stg-panel { width: calc(100vw - 16px); max-height: calc(100vh - 24px); }
+  .stg-panel { width: calc(100vw - 16px); height: calc(100dvh - 24px); max-height: calc(100dvh - 24px); }
   #stg-root { font-size: 13px; }
   .stg-panel-header strong { font-size: 15px; }
   .stg-theater-header { align-items: flex-start; gap: 8px; }
@@ -497,5 +507,5 @@ dialog.stg-modal::backdrop {
   .stg-worldbooks-list { grid-template-columns: 1fr; }
   .stg-log-summary { grid-template-columns: auto auto; }
   .stg-log-summary strong { grid-column: 1 / -1; }
-  dialog.stg-modal { width: calc(100vw - 24px); height: calc(100vh - 24px); max-height: calc(100vh - 24px); }
+  dialog.stg-modal { width: calc(100vw - 24px); height: calc(100dvh - 24px); max-height: calc(100dvh - 24px); }
 }
