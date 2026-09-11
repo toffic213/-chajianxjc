@@ -965,7 +965,7 @@ window.addEventListener('message', function(e){
     return messageElement.querySelector('.mes_block, .mes_text') || messageElement;
   }
 
-  function renderMessageTheater(messageId) {
+  function renderMessageTheater(messageId, options = {}) {
     const message = getMessage(messageId);
     const record = getMessageRecord(message);
     const host = findMessageElement(messageId);
@@ -1001,7 +1001,7 @@ window.addEventListener('message', function(e){
       isFavorite,
       choices.map((choice) => [choice.id, choice.label])
     ]);
-    if (old?.dataset.stgRenderSignature === renderSignature) {
+    if (!options.force && old?.dataset.stgRenderSignature === renderSignature) {
       syncGenerationControls();
       return;
     }
@@ -1049,13 +1049,13 @@ window.addEventListener('message', function(e){
     if (box.classList.contains('is-folded')) box.querySelector('.stg-theater-body').hidden = true;
   }
 
-  async function updateRecord(messageId, updater) {
+  async function updateRecord(messageId, updater, options = {}) {
     const message = getMessage(messageId);
     const record = getMessageRecord(message);
     if (!record) return;
     const next = updater(record);
     await saveMessageRecord(message, next);
-    renderMessageTheater(messageId);
+    if (options.render !== false) renderMessageTheater(messageId, { force: Boolean(options.force) });
   }
 
   function mountUI() {
@@ -1666,11 +1666,11 @@ window.addEventListener('message', function(e){
 
   function positionPanel() {
     if (!panel || panel.hidden) return;
-    panel.style.left = '50%';
-    panel.style.top = '50%';
-    panel.style.right = 'auto';
-    panel.style.bottom = 'auto';
-    panel.style.transform = 'translate(-50%, -50%)';
+    panel.style.setProperty('left', '50%', 'important');
+    panel.style.setProperty('top', '50%', 'important');
+    panel.style.setProperty('right', 'auto', 'important');
+    panel.style.setProperty('bottom', 'auto', 'important');
+    panel.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
   }
 
   function ensureFab() {
@@ -1990,12 +1990,25 @@ window.addEventListener('message', function(e){
         return;
       }
       if (action === 'edit') {
-        theater.querySelector('.stg-theater-content').hidden = true;
-        theater.querySelector('.stg-edit-area').hidden = false;
+        const item = activeRecordItem(record);
+        const content = theater.querySelector('.stg-theater-content');
+        const editArea = theater.querySelector('.stg-edit-area');
+        const textarea = theater.querySelector('[data-stg-field="edit-content"]');
+        if (!content || !editArea || !textarea || !item) return;
+        textarea.value = item.content || '';
+        content.hidden = true;
+        editArea.hidden = false;
+        textarea.focus({ preventScroll: true });
         return;
       }
       if (action === 'cancel-edit') {
-        renderMessageTheater(messageId);
+        const item = activeRecordItem(record);
+        const content = theater.querySelector('.stg-theater-content');
+        const editArea = theater.querySelector('.stg-edit-area');
+        const textarea = theater.querySelector('[data-stg-field="edit-content"]');
+        if (textarea) textarea.value = item?.content || '';
+        if (content) content.hidden = false;
+        if (editArea) editArea.hidden = true;
         return;
       }
       if (action === 'save-edit') {
@@ -2009,36 +2022,36 @@ window.addEventListener('message', function(e){
           item.edited = true;
           if (item.id === next.current?.id) next.current = item;
           return next;
-        });
+        }, { force: true });
+        setStatus('✓ 编辑已保存');
         return;
       }
       if (action === 'favorite') {
-        const oldFavCount = (record.favorites || []).length;
-        await updateRecord(messageId, (next) => {
-          const item = activeRecordItem(next);
-          if (!item) return next;
-          const alreadyFavorite = isRecordItemFavorite(next, item.id);
-          if (alreadyFavorite) {
-            next.favorites = (next.favorites || []).filter((favorite) => favorite.id !== item.id);
-            for (const generatedItem of next.items || []) {
-              if (generatedItem.id === item.id) generatedItem.favorite = false;
-            }
-            if (next.current?.id === item.id) next.current.favorite = false;
-            if (!(next.items || []).some((generatedItem) => generatedItem.id === item.id)) {
-              next.active = firstRecordItemId(next);
-            }
-          } else {
-            const favoriteItem = { ...clone(item), favorite: true };
-            next.favorites = [...(next.favorites || []), favoriteItem];
-            for (const generatedItem of next.items || []) {
-              if (generatedItem.id === item.id) generatedItem.favorite = true;
-            }
-            if (next.current?.id === item.id) next.current.favorite = true;
-          }
-          return next;
-        });
-        const newFavCount = (record.favorites || []).length;
-        setStatus(newFavCount > oldFavCount ? '✓ 已收藏' : '✓ 已取消收藏');
+        const item = activeRecordItem(record);
+        if (!item) return;
+        const alreadyFavorite = isRecordItemFavorite(record, item.id);
+        if (alreadyFavorite) {
+          record.favorites = (record.favorites || []).filter((favorite) => favorite.id !== item.id);
+        } else {
+          record.favorites = [...(record.favorites || []), { ...clone(item), favorite: true }];
+        }
+        for (const generatedItem of generatedRecordItems(record)) {
+          if (generatedItem.id === item.id) generatedItem.favorite = !alreadyFavorite;
+        }
+        if (record.current?.id === item.id) record.current.favorite = !alreadyFavorite;
+        await saveMessageRecord(message, record);
+
+        actionElement.textContent = alreadyFavorite ? '收藏' : '取消收藏';
+        actionElement.title = actionElement.textContent;
+        actionElement.setAttribute('aria-label', actionElement.textContent);
+        actionElement.classList.toggle('is-active', !alreadyFavorite);
+        const signature = JSON.parse(theater.dataset.stgRenderSignature || '[]');
+        if (Array.isArray(signature) && signature.length >= 3) {
+          signature[2] = !alreadyFavorite;
+          theater.dataset.stgRenderSignature = JSON.stringify(signature);
+        }
+        if (root?.querySelector('[data-stg-tab="favorites"].is-active')) renderTab('favorites');
+        setStatus(alreadyFavorite ? '✓ 已取消收藏' : '✓ 已收藏');
         return;
       }
       if (action === 'delete') {
