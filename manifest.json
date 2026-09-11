@@ -1,8 +1,8 @@
 {
-  "display_name": "Stage Theater",
+  "display_name": "舞台剧咪",
   "name": "stage-theater",
   "id": "stage-theater",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "type": "extension",
   "js": "index.js",
   "css": "style.css",
