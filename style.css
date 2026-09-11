@@ -276,6 +276,21 @@
 
 .stg-small-action { font-size: 12px; }
 
+.stg-prompt-row {
+  margin-bottom: 8px; padding: 10px;
+  background: #0d1620; border: 1px solid var(--stg-line); border-radius: 4px;
+  content-visibility: auto; contain-intrinsic-size: 48px;
+}
+
+.stg-prompt-content {
+  display: block; width: 100%; min-height: 100px; margin-bottom: 6px;
+  resize: vertical; padding: 8px; border: 1px solid var(--stg-line);
+  border-radius: 3px; color: var(--stg-text); background: #0e151a;
+  font-size: 12px;
+}
+
+.stg-prompt-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
 .stg-input-action { display: flex; gap: 5px; }
 
 .stg-input-action input { flex: 1; }

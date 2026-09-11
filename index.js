@@ -1217,28 +1217,17 @@ window.addEventListener('message', function(e){
       if (!grouped[cat]) return;
       const prompts = grouped[cat];
       prompts.forEach(p => {
-        const contentId = `prompt-content-${p.id}`;
-        promptsList += `<div data-stg-prompt-id="${p.id}" style="margin-bottom:8px;padding:10px;background:#0d1620;border:1px solid var(--stg-line);border-radius:4px">
+        promptsList += `<div class="stg-prompt-row" data-stg-prompt-id="${escapeAttr(p.id)}">
           <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-            <button type="button" onclick="
-              const content = document.getElementById('${contentId}');
-              const btn = this;
-              if (content.style.display === 'none') {
-                content.style.display = 'block';
-                btn.textContent = '▼';
-              } else {
-                content.style.display = 'none';
-                btn.textContent = '▶';
-              }
-            " style="width:20px;height:20px;padding:0;background:transparent;border:none;cursor:pointer;color:var(--stg-text);font-weight:bold;font-size:12px;flex-shrink:0;display:grid;place-items:center" title="展开/收起">▶</button>
+            <button type="button" data-stg-action="toggle-prompt" style="width:20px;height:20px;padding:0;background:transparent;border:none;cursor:pointer;color:var(--stg-text);font-weight:bold;font-size:12px;flex-shrink:0;display:grid;place-items:center" title="展开/收起" aria-label="展开/收起">▶</button>
             <label class="stg-check" style="flex-shrink:0;cursor:pointer" title="勾选启用此提示词"><input type="checkbox" data-stg-prompt-field="enabled" ${p.enabled ? 'checked' : ''}><span></span></label>
             <input data-stg-prompt-field="name" value="${escapeAttr(p.name)}" placeholder="提示词名称" style="flex:1;min-width:0;padding:4px;background:transparent;border:none;color:var(--stg-text);font-size:12px;outline:none">
             <span style="font-size:11px;color:var(--stg-muted);background:#0a0f14;padding:2px 6px;border-radius:3px;flex-shrink:0">${escapeHtml(cat)}</span>
-            <button type="button" data-stg-action="duplicate-prompt" title="复制此提示词" style="padding:4px 8px;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;color:var(--stg-text);flex-shrink:0;font-size:12px">复制</button>
-            <button type="button" data-stg-action="delete-prompt" title="删除此提示词" style="padding:4px 8px;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;color:var(--stg-text);flex-shrink:0;font-size:12px" data-stg-prompt-id="${p.id}">删除</button>
+            <button type="button" data-stg-action="duplicate-prompt" data-stg-prompt-id="${escapeAttr(p.id)}" title="复制此提示词" style="padding:4px 8px;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;color:var(--stg-text);flex-shrink:0;font-size:12px">复制</button>
+            <button type="button" data-stg-action="delete-prompt" data-stg-prompt-id="${escapeAttr(p.id)}" title="删除此提示词" style="padding:4px 8px;background:transparent;border:1px solid var(--stg-line);border-radius:3px;cursor:pointer;color:var(--stg-text);flex-shrink:0;font-size:12px">删除</button>
           </div>
-          <textarea id="${contentId}" data-stg-prompt-field="content" placeholder="在此输入提示词内容..." style="display:none;width:100%;min-height:100px;resize:vertical;padding:8px;background:#0e151a;border:1px solid var(--stg-line);border-radius:3px;color:var(--stg-text);font-size:12px;margin-bottom:6px">${escapeHtml(p.content)}</textarea>
-          <div style="display:flex;gap:6px;justify-content:flex-end">
+          <div class="stg-prompt-content-slot"></div>
+          <div class="stg-prompt-actions">
             <button type="button" data-stg-action="save-prompt" title="保存名称和内容的修改" style="padding:6px 12px;background:var(--stg-accent);color:#0a0f14;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600">保存编辑</button>
           </div>
         </div>`;
@@ -1898,8 +1887,8 @@ window.addEventListener('message', function(e){
           settings.selectedCategories = [...selected, category];
         }
       }
-      await saveSettings();
       renderTab('prompts');
+      queueSettingsSave();
       return;
     }
 
@@ -1971,6 +1960,28 @@ window.addEventListener('message', function(e){
       return;
     }
 
+    if (action === 'toggle-prompt') {
+      const row = actionElement.closest('[data-stg-prompt-id]');
+      const prompt = settings.prompts.find((item) => item.id === row?.dataset.stgPromptId);
+      const slot = row?.querySelector('.stg-prompt-content-slot');
+      if (!prompt || !slot) return;
+      const textarea = slot.querySelector('[data-stg-prompt-field="content"]');
+      if (textarea) {
+        textarea.hidden = !textarea.hidden;
+        actionElement.textContent = textarea.hidden ? '▶' : '▼';
+        return;
+      }
+      const editor = hostDocument.createElement('textarea');
+      editor.dataset.stgPromptField = 'content';
+      editor.placeholder = '在此输入提示词内容...';
+      editor.value = prompt.content || '';
+      editor.className = 'stg-prompt-content';
+      slot.appendChild(editor);
+      actionElement.textContent = '▼';
+      editor.focus({ preventScroll: true });
+      return;
+    }
+
     // 以下操作先尝试从actionElement开始查找theater
     const theater = actionElement.closest('.stg-message-theater');
     if (theater) {
@@ -2039,8 +2050,6 @@ window.addEventListener('message', function(e){
           if (generatedItem.id === item.id) generatedItem.favorite = !alreadyFavorite;
         }
         if (record.current?.id === item.id) record.current.favorite = !alreadyFavorite;
-        await saveMessageRecord(message, record);
-
         actionElement.textContent = alreadyFavorite ? '收藏' : '取消收藏';
         actionElement.title = actionElement.textContent;
         actionElement.setAttribute('aria-label', actionElement.textContent);
@@ -2052,6 +2061,12 @@ window.addEventListener('message', function(e){
         }
         if (root?.querySelector('[data-stg-tab="favorites"].is-active')) renderTab('favorites');
         setStatus(alreadyFavorite ? '✓ 已取消收藏' : '✓ 已收藏');
+        hostWindow.setTimeout(() => {
+          saveMessageRecord(message, record).catch((error) => {
+            addLog(`收藏状态保存失败: ${error.message || error}`, 'error');
+            setStatus('收藏状态保存失败，请重试', true);
+          });
+        }, 0);
         return;
       }
       if (action === 'delete') {
@@ -2358,8 +2373,8 @@ window.addEventListener('message', function(e){
       } else {
         settings.randomMode = { enabled: true, group: settings.randomMode?.group || '', count: settings.randomMode?.count || 1 };
       }
-      await saveSettings();
       renderTab('prompts');
+      queueSettingsSave();
       return;
     }
     if (target.id === 'stg-random-group' || target.id === 'stg-random-count') {
@@ -2488,6 +2503,14 @@ window.addEventListener('message', function(e){
     }
     if (target.matches('[data-stg-setting="systemPrompt"]')) {
       settings.systemPrompt = target.value;
+      queueSettingsSave();
+      return;
+    }
+    if (target.matches('[data-stg-prompt-field="name"], [data-stg-prompt-field="content"]')) {
+      const row = target.closest('[data-stg-prompt-id]');
+      const prompt = settings.prompts.find((item) => item.id === row?.dataset.stgPromptId);
+      if (!prompt) return;
+      prompt[target.dataset.stgPromptField] = target.value;
       queueSettingsSave();
     }
   }
