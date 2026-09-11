@@ -196,6 +196,7 @@
   color: #d8f2e9; font-size: 13px; font-weight: 700;
   letter-spacing: .04em;
 }
+.stg-system-entries{display:grid;gap:10px;margin-top:10px}.stg-system-entry{border:1px solid var(--stg-line);padding:10px;background:rgba(255,255,255,.02);border-radius:4px}.stg-system-entry-head{display:flex;align-items:center;gap:12px;margin-bottom:8px;font-size:12px}.stg-system-entry-head label{margin-left:auto;color:var(--stg-muted);font-size:11px}.stg-system-entry-options{display:grid;grid-template-columns:1fr 1.5fr;gap:8px}.stg-system-entry textarea{width:100%;min-height:110px;resize:vertical;padding:8px;background:#0a0f14;border:1px solid var(--stg-line);color:var(--stg-text);font-size:12px;border-radius:4px;box-sizing:border-box}@media(max-width:520px){.stg-system-entry-options{grid-template-columns:1fr}}
 
 .stg-field { display: grid; gap: 5px; color: var(--stg-muted); font-size: 12px; }
 

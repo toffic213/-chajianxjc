@@ -115,6 +115,31 @@
     return JSON.parse(JSON.stringify(value));
   }
 
+  function newSystemEntry(index = 0) {
+    return {
+      id: `system-entry-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+      role: 'system',
+      position: 'before-content',
+      content: '',
+      enabled: true
+    };
+  }
+
+  function normalizeSystemEntries(preset, presetIndex = 0) {
+    const source = Array.isArray(preset?.entries)
+      ? preset.entries
+      : [{ content: preset?.content || '', role: 'system', position: 'before-content', enabled: true }];
+    return source.map((entry, index) => ({
+      ...newSystemEntry(presetIndex * 100 + index),
+      ...entry,
+      id: entry?.id || `system-entry-${Date.now()}-${presetIndex}-${index}`,
+      role: ['system', 'user', 'assistant'].includes(entry?.role) ? entry.role : 'system',
+      position: ['request-start', 'before-character', 'after-character', 'before-worldbook', 'after-worldbook', 'before-context', 'after-context', 'before-previous-user', 'after-previous-user', 'before-current', 'after-current', 'before-theater-prompt', 'after-theater-prompt', 'before-format', 'after-format', 'before-content', 'after-content', 'request-end'].includes(entry?.position) ? entry.position : 'before-content',
+      content: String(entry?.content || ''),
+      enabled: entry?.enabled !== false
+    }));
+  }
+
   function loadLogs() {
     try {
       const stored = JSON.parse(localStorage.getItem(LOG_STORAGE_KEY) || '[]');
@@ -158,7 +183,11 @@
 
   function mergeSettings(raw) {
     const next = clone(DEFAULT_SETTINGS);
-    if (!raw || typeof raw !== 'object') return next;
+    if (!raw || typeof raw !== 'object') {
+      next.systemPresets = next.systemPresets.map((preset, index) => ({ ...preset, entries: normalizeSystemEntries(preset, index) }));
+      next.systemPrompt = next.systemPresets[0]?.entries?.[0]?.content || '';
+      return next;
+    }
     Object.assign(next, raw);
     next.profiles = Array.isArray(raw.profiles) && raw.profiles.length ? raw.profiles : next.profiles;
     next.prompts = Array.isArray(raw.prompts) && raw.prompts.length ? raw.prompts : next.prompts;
@@ -181,9 +210,9 @@
     next.systemPresets = storedPresets.map((preset, index) => ({
       id: preset?.id || `system-preset-${Date.now()}-${index}`,
       name: String(preset?.name || `系统提示词 ${index + 1}`),
-      content: String(preset?.content || ''),
+      entries: normalizeSystemEntries(preset, index),
       builtIn: Boolean(preset?.builtIn)
-    })).filter((preset) => preset.content.trim());
+    })).filter((preset) => preset.entries.some((entry) => entry.content.trim()));
     if (!next.systemPresets.length) {
       next.systemPresets = clone(DEFAULT_SYSTEM_PRESETS);
       if (legacySystemPrompt) next.systemPresets[0].content = legacySystemPrompt;
@@ -192,9 +221,10 @@
         if (!next.systemPresets.some((stored) => stored.id === preset.id)) next.systemPresets.push(clone(preset));
       }
     }
+    next.systemPresets = next.systemPresets.map((preset, index) => ({ ...preset, entries: normalizeSystemEntries(preset, index) }));
     const activePreset = next.systemPresets.find((preset) => preset.id === raw.activeSystemPromptId) || next.systemPresets[0];
     next.activeSystemPromptId = activePreset.id;
-    next.systemPrompt = activePreset.content;
+    next.systemPrompt = activePreset?.entries?.find((entry) => entry.role === 'system')?.content || '';
     next.disabledCategories = Array.isArray(raw.disabledCategories)
       ? [...new Set(raw.disabledCategories.map((category) => String(category)))]
       : [];
@@ -391,6 +421,40 @@
     }
   }
 
+  function variableValue(variables, path) {
+    if (!variables || typeof variables !== 'object') return undefined;
+    if (Object.prototype.hasOwnProperty.call(variables, path)) return variables[path];
+    return String(path).split('.').reduce((value, key) => value != null && typeof value === 'object' ? value[key] : undefined, variables);
+  }
+
+  function resolveBareVariables(text) {
+    const getVariables = helper('getVariables');
+    if (typeof getVariables !== 'function' || !String(text).includes('{{')) return String(text);
+    const ctx = getContext();
+    const tables = [];
+    for (const type of ['global', 'preset', 'character', 'chat', 'message', 'script']) {
+      try {
+        const variables = getVariables.call(ctx, type === 'message' ? { type, message_id: 'latest' } : { type });
+        if (variables && typeof variables === 'object') tables.push(variables);
+      } catch {
+        // Some variable scopes are unavailable in a given chat or Tavern version.
+      }
+    }
+    return String(text).replace(/{{\s*([\w.$-]+)\s*}}/g, (match, path) => {
+      let value;
+      // Later scopes deliberately win: current message > chat > character > preset > global.
+      for (const table of tables) {
+        const candidate = variableValue(table, path);
+        if (candidate !== undefined) value = candidate;
+      }
+      if (value === undefined || value === null) return match;
+      if (typeof value === 'object') {
+        try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+      }
+      return String(value);
+    });
+  }
+
   async function resolveMacros(text) {
     const value = String(text ?? '');
     const ctx = getContext();
@@ -401,12 +465,12 @@
       if (typeof fn !== 'function') continue;
       try {
         const result = await fn.call(ctx, value);
-        if (typeof result === 'string') return result;
+        if (typeof result === 'string') return resolveBareVariables(result);
       } catch (error) {
         console.warn(`[${PLUGIN_ID}] macro substitution failed`, error);
       }
     }
-    return value;
+    return resolveBareVariables(value);
   }
 
   async function getCharacterContext() {
@@ -509,7 +573,7 @@
     const context = contextMessages(messageId);
     const userMessage = settings.sendPreviousUser ? applyEnabledTavernRegex(previousUserMessage(messageId), 'user_input') : '';
     const currentMessage = applyEnabledTavernRegex(messageText(message), 'ai_output', Number(messageId));
-    const payload = [
+    const sections = [
       '你正在为聊天消息生成独立的小剧场展示内容。',
       character ? `【角色卡设定】\n${character}` : '',
       worldbook ? `【已启用世界书条目】\n${worldbook}` : '',
@@ -518,10 +582,22 @@
       `【本次 AI 回复】\n${currentMessage}`,
       `【小剧场提示词】\n${resolvedPrompt}`,
       `请按以下格式严格返回结果：\n【标题】≤10字的简洁标题\n【内容】\n[小剧场HTML内容]\n\n如果需要输出多个小剧场，必须使用下面的分隔标记，并且标记必须单独占一行：\n${splitToken}\n每个分区都从【标题】开始。禁止使用 =====、----- 或其他普通符号作为分隔。`
-    ].filter(Boolean).join('\n\n');
+    ];
+    const activePreset = settings.systemPresets.find((preset) => preset.id === settings.activeSystemPromptId) || settings.systemPresets[0];
+    if (activePreset && !Array.isArray(activePreset.entries)) activePreset.entries = normalizeSystemEntries(activePreset);
+    const injected = await Promise.all((activePreset?.entries || []).filter((entry) => entry.enabled && entry.content.trim()).map(async (entry) => ({
+      role: entry.role,
+      position: entry.position,
+      content: await resolveMacros(entry.content)
+    })));
+    const anchorMap = { 'request-start': 0, 'before-character': 1, 'after-character': 2, 'before-worldbook': 2, 'after-worldbook': 3, 'before-context': 3, 'after-context': 4, 'before-previous-user': 4, 'after-previous-user': 5, 'before-current': 5, 'after-current': 6, 'before-theater-prompt': 6, 'after-theater-prompt': 7, 'before-format': 7, 'after-format': 8, 'before-content': 6, 'after-content': 7, 'request-end': 8 };
+    const messages = [];
+    for (let index = 0; index <= sections.length; index += 1) {
+      for (const entry of injected.filter((item) => (anchorMap[item.position] ?? 6) === index)) messages.push({ role: entry.role, content: entry.content });
+      if (sections[index]) messages.push({ role: 'user', content: sections[index] });
+    }
     return {
-      system: settings.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-      user: payload,
+      messages,
       prompts,
       splitToken
     };
@@ -606,10 +682,7 @@
       temperature: Math.max(0, Number(profile.temperature) || 0),
       max_tokens: Math.max(1, Number(profile.maxTokens) || 1200),
       stream: Boolean(profile.stream),
-      messages: [
-        { role: 'system', content: request.system },
-        { role: 'user', content: request.user }
-      ]
+      messages: request.messages
     };
     let lastError = null;
     const candidates = endpointCandidates(profile.baseUrl, '/chat/completions');
@@ -1361,7 +1434,7 @@ window.addEventListener('message', function(e){
     </div>`;
   }
 
-  function systemTab() {
+  function legacySystemTab() {
     const active = settings.systemPresets.find((preset) => preset.id === settings.activeSystemPromptId) || settings.systemPresets[0];
     return `<div class="stg-section">
       <div class="stg-settings-card">
@@ -1377,6 +1450,41 @@ window.addEventListener('message', function(e){
       <label class="stg-field"><span>预设名称</span><input data-stg-system-preset-field="name" value="${escapeAttr(active?.name || '')}"></label>
       <label class="stg-field"><span>系统提示词（发给 AI 的 system 消息）</span><textarea data-stg-system-preset-field="content" style="min-height:260px;resize:vertical;padding:8px;background:#0a0f14;border:1px solid var(--stg-line);color:var(--stg-text);font-size:12px;border-radius:4px">${escapeHtml(active?.content || '')}</textarea></label>
       <p class="stg-muted">预设会自动保存。内置预设同样可以直接编辑；恢复内置内容只会重置当前内置预设。</p>
+    </div>`;
+  }
+
+  function systemTab() {
+    const active = settings.systemPresets.find((preset) => preset.id === settings.activeSystemPromptId) || settings.systemPresets[0];
+    if (active && !Array.isArray(active.entries)) active.entries = normalizeSystemEntries(active);
+    const entries = active?.entries || [];
+    const roleOptions = (value) => ['system', 'user', 'assistant'].map((role) => `<option value="${role}" ${value === role ? 'selected' : ''}>${role}</option>`).join('');
+    const positionOptions = (value) => [
+      ['before-character', '角色卡前'], ['after-character', '角色卡后'], ['before-worldbook', '世界书前'], ['after-worldbook', '世界书后'], ['before-context', '聊天上下文前'], ['after-context', '聊天上下文后'], ['before-previous-user', '上一条用户消息前'], ['after-previous-user', '上一条用户消息后'], ['before-current', '当前 AI 回复前'], ['after-current', '当前 AI 回复后'], ['before-theater-prompt', '小剧场提示词前'], ['after-theater-prompt', '小剧场提示词后'], ['before-format', '输出格式要求前'], ['after-format', '输出格式要求后'], ['request-end', '请求末尾'],
+      ['request-start', '请求最前'],
+      ['before-content', '插件发送内容前'],
+      ['after-content', '插件发送内容后']
+    ].map(([position, label]) => `<option value="${position}" ${value === position ? 'selected' : ''}>${label}</option>`).join('');
+    return `<div class="stg-section">
+      <div class="stg-settings-card">
+        <div class="stg-settings-card-title">提示词预设</div>
+        <label class="stg-field"><span>当前预设</span><select data-stg-system-preset>${settings.systemPresets.map((preset) => `<option value="${escapeAttr(preset.id)}" ${preset.id === active?.id ? 'selected' : ''}>${escapeHtml(preset.name)}${preset.builtIn ? ' · 内置' : ''}</option>`).join('')}</select></label>
+        <div class="stg-inline-actions">
+          ${button('new-system-preset', '新建预设', SVG.plus, 'stg-small-action')}
+          ${button('duplicate-system-preset', '复制当前', SVG.copy, 'stg-small-action')}
+          ${button('delete-system-preset', '删除当前', SVG.trash, 'stg-small-action')}
+        </div>
+      </div>
+      <label class="stg-field"><span>预设名称</span><input data-stg-system-preset-field="name" value="${escapeAttr(active?.name || '')}"></label>
+      <div class="stg-settings-card">
+        <div class="stg-settings-card-title">提示词条目</div>
+        <div class="stg-inline-actions">${button('new-system-entry', '新增提示词', SVG.plus, 'stg-small-action')}</div>
+        <p class="stg-muted">每条提示词可使用 system、user 或 assistant 身份；位置决定它在插件本次发送内容的前后顺序。</p>
+        <div class="stg-system-entries">${entries.map((entry, index) => `<section class="stg-system-entry" data-stg-system-entry-id="${escapeAttr(entry.id)}">
+          <div class="stg-system-entry-head"><strong>提示词 ${index + 1}</strong><label><input type="checkbox" data-stg-system-entry-field="enabled" ${entry.enabled ? 'checked' : ''}> 启用</label>${button('delete-system-entry', '删除此条', SVG.trash, 'stg-small-action')}</div>
+          <div class="stg-system-entry-options"><label class="stg-field"><span>身份</span><select data-stg-system-entry-field="role">${roleOptions(entry.role)}</select></label><label class="stg-field"><span>注入位置</span><select data-stg-system-entry-field="position">${positionOptions(entry.position)}</select></label></div>
+          <textarea data-stg-system-entry-field="content" placeholder="输入提示词内容">${escapeHtml(entry.content || '')}</textarea>
+        </section>`).join('') || '<p class="stg-muted">尚无提示词。新增一条后才会随请求发送。</p>'}</div>
+      </div>
     </div>`;
   }
 
@@ -2053,6 +2161,55 @@ window.addEventListener('message', function(e){
       return;
     }
     if (action === 'new-system-preset') {
+      const preset = { id: `system-preset-${Date.now()}`, name: `Preset ${settings.systemPresets.length + 1}`, entries: [newSystemEntry()], builtIn: false };
+      settings.systemPresets.push(preset);
+      settings.activeSystemPromptId = preset.id;
+      settings.systemPrompt = '';
+      await saveSettings();
+      renderTab('system');
+      return;
+    }
+    if (action === 'new-system-entry') {
+      const preset = settings.systemPresets.find((item) => item.id === settings.activeSystemPromptId);
+      if (!preset) return;
+      preset.entries.push(newSystemEntry(preset.entries.length));
+      await saveSettings();
+      renderTab('system');
+      return;
+    }
+    if (action === 'delete-system-entry') {
+      const preset = settings.systemPresets.find((item) => item.id === settings.activeSystemPromptId);
+      const entryId = actionElement.closest('[data-stg-system-entry-id]')?.dataset.stgSystemEntryId;
+      if (!preset || !entryId) return;
+      preset.entries = preset.entries.filter((entry) => entry.id !== entryId);
+      settings.systemPrompt = preset.entries.find((entry) => entry.role === 'system')?.content || '';
+      await saveSettings();
+      renderTab('system');
+      return;
+    }
+    if (action === 'duplicate-system-preset') {
+      const current = settings.systemPresets.find((preset) => preset.id === settings.activeSystemPromptId) || settings.systemPresets[0];
+      if (!current) return;
+      const preset = { ...clone(current), id: `system-preset-${Date.now()}`, name: `${current.name} Copy`, builtIn: false };
+      preset.entries = normalizeSystemEntries(preset, settings.systemPresets.length);
+      settings.systemPresets.push(preset);
+      settings.activeSystemPromptId = preset.id;
+      settings.systemPrompt = preset.entries.find((entry) => entry.role === 'system')?.content || '';
+      await saveSettings();
+      renderTab('system');
+      return;
+    }
+    if (action === 'delete-system-preset') {
+      if (settings.systemPresets.length <= 1) return setStatus('At least one preset is required.', true);
+      settings.systemPresets = settings.systemPresets.filter((preset) => preset.id !== settings.activeSystemPromptId);
+      const nextPreset = settings.systemPresets[0];
+      settings.activeSystemPromptId = nextPreset.id;
+      settings.systemPrompt = nextPreset.entries.find((entry) => entry.role === 'system')?.content || '';
+      await saveSettings();
+      renderTab('system');
+      return;
+    }
+    if (action === 'new-system-preset') {
       const preset = { id: `system-preset-${Date.now()}`, name: `系统提示词 ${settings.systemPresets.length + 1}`, content: DEFAULT_SYSTEM_PROMPT, builtIn: false };
       settings.systemPresets.push(preset);
       settings.activeSystemPromptId = preset.id;
@@ -2457,8 +2614,8 @@ window.addEventListener('message', function(e){
       const current = settings.systemPresets.find((preset) => preset.id === settings.activeSystemPromptId) || settings.systemPresets[0];
       const builtIn = DEFAULT_SYSTEM_PRESETS.find((preset) => preset.id === current?.id);
       if (!current || !builtIn) return setStatus('当前预设不是内置预设，不能恢复内置内容。', true);
-      current.content = builtIn.content;
-      settings.systemPrompt = current.content;
+      current.entries = [{ ...newSystemEntry(), role: 'system', content: builtIn.content }];
+      settings.systemPrompt = builtIn.content;
       await saveSettings();
       renderTab('system');
       setStatus('✓ 已恢复内置系统提示词');
@@ -2489,9 +2646,18 @@ window.addEventListener('message', function(e){
       const preset = settings.systemPresets.find((item) => item.id === target.value);
       if (!preset) return;
       settings.activeSystemPromptId = preset.id;
-      settings.systemPrompt = preset.content;
+      settings.systemPrompt = preset.entries.find((entry) => entry.role === 'system')?.content || '';
       await saveSettings();
       renderTab('system');
+      return;
+    }
+    if (target.matches('[data-stg-system-entry-field]')) {
+      const preset = settings.systemPresets.find((item) => item.id === settings.activeSystemPromptId);
+      const row = target.closest('[data-stg-system-entry-id]');
+      const entry = preset?.entries?.find((item) => item.id === row?.dataset.stgSystemEntryId);
+      if (!entry) return;
+      entry[target.dataset.stgSystemEntryField] = target.value;
+      await saveSettings();
       return;
     }
     if (target.matches('[data-stg-worldbook-name]')) {
@@ -2648,6 +2814,17 @@ window.addEventListener('message', function(e){
       const key = target.dataset.stgSystemPresetField;
       preset[key] = target.value;
       if (key === 'content') settings.systemPrompt = target.value;
+      queueSettingsSave();
+      return;
+    }
+    if (target.matches('[data-stg-system-entry-field]')) {
+      const preset = settings.systemPresets.find((item) => item.id === settings.activeSystemPromptId);
+      const row = target.closest('[data-stg-system-entry-id]');
+      const entry = preset?.entries?.find((item) => item.id === row?.dataset.stgSystemEntryId);
+      if (!entry) return;
+      const key = target.dataset.stgSystemEntryField;
+      entry[key] = target.type === 'checkbox' ? target.checked : target.value;
+      if (key === 'content' && entry.role === 'system') settings.systemPrompt = entry.content;
       queueSettingsSave();
       return;
     }
