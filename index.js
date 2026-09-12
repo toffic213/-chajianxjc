@@ -469,11 +469,29 @@
   }
 
   async function resolveMacros(text) {
-    const value = resolveBareVariables(String(text ?? ''));
+    let value = resolveBareVariables(String(text ?? ''));
     const ctx = getContext();
     const extended = ctx?.substituteParamsExtended || hostWindow.SillyTavern?.substituteParamsExtended;
     const basic = ctx?.substituteParams || hostWindow.SillyTavern?.substituteParams;
     const macro = hostWindow.TavernHelper?.substitudeMacros;
+    // MEMORY is commonly used by memory extensions as an alias for Tavern's summary macro.
+    if (/{{\s*MEMORY\s*}}/i.test(value)) {
+      let summaryResolved = false;
+      for (const fn of [extended, basic, macro]) {
+        if (typeof fn !== 'function') continue;
+        try {
+          const summary = await fn.call(ctx, '{{summary}}');
+          if (typeof summary === 'string' && summary !== '{{summary}}') {
+            value = value.replace(/{{\s*MEMORY\s*}}/gi, summary);
+            summaryResolved = true;
+            break;
+          }
+        } catch {
+          // Try the next compatible macro implementation.
+        }
+      }
+      if (!summaryResolved) value = value.replace(/{{\s*MEMORY\s*}}/gi, '{{summary}}');
+    }
     for (const fn of [extended, basic, macro]) {
       if (typeof fn !== 'function') continue;
       try {
