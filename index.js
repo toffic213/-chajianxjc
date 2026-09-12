@@ -6,6 +6,7 @@
   const FAB_ID = 'stage-theater-fab';
   const STORAGE_KEY = 'stage-theater-settings-v1';
   const LOG_STORAGE_KEY = 'stage-theater-logs-v1';
+  const FAVORITES_STORAGE_KEY = 'stage-theater-favorites-v1';
   const MAX_LOGS = 100;
   const MAX_LOG_STORAGE_CHARS = 1500000;
   const IMAGE_PROMPT_PATTERN = /image###([\s\S]{1,4000}?)###/gi;
@@ -54,6 +55,7 @@
     contextDepth: 10,
     sendWorldbook: false,
     sendPreviousUser: true,
+    sendPersona: true,
     promptMode: 'merged',
     fabSize: 48,
     fabImage: null,
@@ -107,6 +109,7 @@
   let promptSaveTimer = null;
   let logRenderTimer = null;
   const logs = loadLogs();
+  const globalFavorites = loadGlobalFavorites();
   const generationControllers = new Map();
   const frameRegistry = new Map();
   const eventUnsubscribers = [];
@@ -407,6 +410,14 @@
       .sort((a, b) => Number(a.order) - Number(b.order));
   }
 
+  function loadGlobalFavorites() {
+    try { const value = JSON.parse(localStorage.getItem(FAVORITES_STORAGE_KEY) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; }
+  }
+
+  function persistGlobalFavorites() {
+    try { localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(globalFavorites)); } catch (error) { console.warn(`[${PLUGIN_ID}] favorites save failed`, error); }
+  }
+
   function applyEnabledTavernRegex(text, source, depth) {
     const value = String(text ?? '');
     if (!settings.applyTavernRegex || !value) return value;
@@ -424,6 +435,8 @@
   function variableValue(variables, path) {
     if (!variables || typeof variables !== 'object') return undefined;
     if (Object.prototype.hasOwnProperty.call(variables, path)) return variables[path];
+    const folded = Object.keys(variables).find((key) => key.toLowerCase() === String(path).toLowerCase());
+    if (folded) return variables[folded];
     return String(path).split('.').reduce((value, key) => value != null && typeof value === 'object' ? value[key] : undefined, variables);
   }
 
@@ -481,7 +494,7 @@
         if (typeof fn !== 'function') continue;
         try {
           const summary = await fn.call(ctx, '{{summary}}');
-          if (typeof summary === 'string' && summary !== '{{summary}}') {
+          if (typeof summary === 'string' && summary.trim() && summary !== '{{summary}}') {
             value = value.replace(/{{\s*MEMORY\s*}}/gi, summary);
             summaryResolved = true;
             break;
@@ -496,7 +509,7 @@
       if (typeof fn !== 'function') continue;
       try {
         const result = await fn.call(ctx, value);
-        if (typeof result === 'string') return resolveBareVariables(result);
+        if (typeof result === 'string' && (result.trim() || !/{{\s*(?:MEMORY|summary)\s*}}/i.test(value))) return resolveBareVariables(result);
       } catch (error) {
         console.warn(`[${PLUGIN_ID}] macro substitution failed`, error);
       }
@@ -582,6 +595,20 @@
     }).filter((item) => item.content.trim());
   }
 
+  async function getPersonaContext() {
+    try {
+      const getPersona = helper('getPersona');
+      if (getPersona) {
+        const persona = await getPersona('current');
+        const text = persona?.description || persona?.content || '';
+        return String(text).trim();
+      }
+    } catch (error) {
+      console.warn(`[${PLUGIN_ID}] persona read failed`, error);
+    }
+    return String(hostWindow.persona_description || hostWindow.user_persona || '').trim();
+  }
+
   function previousUserMessage(messageId) {
     const list = chatMessages();
     for (let index = Math.min(Number(messageId) - 1, list.length - 1); index >= 0; index -= 1) {
@@ -600,11 +627,13 @@
       : '';
     const resolvedPrompt = await resolveMacros(theaterPrompt);
     const character = await getCharacterContext();
+    const persona = settings.sendPersona ? await getPersonaContext() : '';
     const worldbook = await getEnabledWorldbookContext();
     const context = contextMessages(messageId);
     const userMessage = settings.sendPreviousUser ? applyEnabledTavernRegex(previousUserMessage(messageId), 'user_input') : '';
     const currentMessage = applyEnabledTavernRegex(messageText(message), 'ai_output', Number(messageId));
     const sections = [
+      persona ? `[User Persona]\n${persona}` : '',
       '你正在为聊天消息生成独立的小剧场展示内容。',
       character ? `【角色卡设定】\n${character}` : '',
       worldbook ? `【已启用世界书条目】\n${worldbook}` : '',
@@ -1578,11 +1607,15 @@ window.addEventListener('message', function(e){
   }
 
   function favoritesTab() {
-    const allFavorites = [];
+    const allFavorites = globalFavorites.map((favorite) => ({ messageId: Number(favorite.messageId), favorite, createdAt: favorite.createdAt, promptNames: favorite.promptNames || [], title: favorite.title || '（无标题）' }));
+    const known = new Set(globalFavorites.map((favorite) => favorite.id));
     chatMessages().forEach((message, messageId) => {
       const record = getMessageRecord(message);
       if (record?.favorites && Array.isArray(record.favorites)) {
         record.favorites.forEach((favorite) => {
+          if (known.has(favorite.id)) return;
+          globalFavorites.push({ ...clone(favorite), messageId, chatId: getContext()?.chatId || getContext()?.chat?.id || '' });
+          persistGlobalFavorites();
           allFavorites.push({
             messageId,
             favorite,
@@ -2354,9 +2387,13 @@ window.addEventListener('message', function(e){
         const alreadyFavorite = isRecordItemFavorite(record, item.id);
         if (alreadyFavorite) {
           record.favorites = (record.favorites || []).filter((favorite) => favorite.id !== item.id);
+          for (let index = globalFavorites.length - 1; index >= 0; index -= 1) if (globalFavorites[index].id === item.id) globalFavorites.splice(index, 1);
         } else {
-          record.favorites = [...(record.favorites || []), { ...clone(item), favorite: true }];
+          const favoriteCopy = { ...clone(item), favorite: true, messageId, chatId: getContext()?.chatId || '' };
+          record.favorites = [...(record.favorites || []), favoriteCopy];
+          globalFavorites.push(favoriteCopy);
         }
+        persistGlobalFavorites();
         for (const generatedItem of generatedRecordItems(record)) {
           if (generatedItem.id === item.id) generatedItem.favorite = !alreadyFavorite;
         }
