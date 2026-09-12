@@ -1649,7 +1649,7 @@ window.addEventListener('message', function(e){
   }
 
   function showFavoriteModal(favoriteId, record, messageId) {
-    const favorite = (record.favorites || []).find((fav) => fav.id === favoriteId);
+    const favorite = (record?.favorites || []).find((fav) => fav.id === favoriteId) || globalFavorites.find((fav) => fav.id === favoriteId);
     if (!favorite) return;
 
     const oldModal = hostDocument.querySelector('.stg-modal');
@@ -2647,7 +2647,9 @@ window.addEventListener('message', function(e){
     if (action === 'view-favorite') {
       const favoriteId = actionElement.closest('[data-stg-favorite-id]')?.dataset.stgFavoriteId;
       const messageId = Number(actionElement.closest('[data-stg-favorite-id]')?.dataset.stgMessageId);
-      if (messageId !== undefined) {
+      if (favoriteId && globalFavorites.some((favorite) => favorite.id === favoriteId)) {
+        showFavoriteModal(favoriteId, null, Number.isFinite(messageId) ? messageId : 0);
+      } else if (messageId !== undefined) {
         const message = getMessage(messageId);
         const record = getMessageRecord(message);
         if (record && favoriteId) {
@@ -2659,6 +2661,12 @@ window.addEventListener('message', function(e){
     if (action === 'remove-favorite') {
       const favoriteId = actionElement.closest('[data-stg-favorite-id]')?.dataset.stgFavoriteId;
       const messageId = Number(actionElement.closest('[data-stg-favorite-id]')?.dataset.stgMessageId);
+      const globalIndex = globalFavorites.findIndex((favorite) => favorite.id === favoriteId);
+      if (globalIndex >= 0) {
+        globalFavorites.splice(globalIndex, 1);
+        persistGlobalFavorites();
+        renderTab('favorites');
+      }
       if (messageId !== undefined) {
         const message = getMessage(messageId);
         const record = getMessageRecord(message);
