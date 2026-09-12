@@ -294,7 +294,7 @@
 
   function helper(name) {
     const ctx = getContext();
-    const candidates = [window.TavernHelper?.[name], window[name], ctx?.[name]];
+    const candidates = [window.TavernHelper?.[name], hostWindow.TavernHelper?.[name], window[name], hostWindow[name], ctx?.[name]];
     return candidates.find((value) => typeof value === 'function') || null;
   }
 
@@ -429,10 +429,13 @@
 
   function resolveBareVariables(text) {
     const getVariables = helper('getVariables');
-    if (typeof getVariables !== 'function' || !String(text).includes('{{')) return String(text);
+    if (!String(text).includes('{{')) return String(text);
     const ctx = getContext();
     const tables = [];
+    const direct = hostWindow.chatMetadata || hostWindow.chat_metadata;
+    if (direct && typeof direct === 'object') tables.push(direct);
     for (const type of ['global', 'preset', 'character', 'chat', 'message', 'script']) {
+      if (typeof getVariables !== 'function') break;
       try {
         const variables = getVariables.call(ctx, type === 'message' ? { type, message_id: 'latest' } : { type });
         if (variables && typeof variables === 'object') tables.push(variables);
@@ -440,7 +443,14 @@
         // Some variable scopes are unavailable in a given chat or Tavern version.
       }
     }
-    return String(text).replace(/{{\s*([\w.$-]+)\s*}}/g, (match, path) => {
+    // Compatibility with older Tavern builds and extensions that expose chat variables directly.
+    for (const table of [ctx?.chatMetadata, window.chat_metadata, ctx?.variables, window.variables]) {
+      if (table && typeof table === 'object') tables.push(table);
+      if (table?.variables && typeof table.variables === 'object') tables.push(table.variables);
+      if (table?.extensions && typeof table.extensions === 'object') tables.push(table.extensions);
+    }
+    const hits = [];
+    const result = String(text).replace(/{{\s*([\w.$-]+)\s*}}/g, (match, path) => {
       let value;
       // Later scopes deliberately win: current message > chat > character > preset > global.
       for (const table of tables) {
@@ -448,19 +458,22 @@
         if (candidate !== undefined) value = candidate;
       }
       if (value === undefined || value === null) return match;
+      hits.push(path);
       if (typeof value === 'object') {
         try { return JSON.stringify(value, null, 2); } catch { return String(value); }
       }
       return String(value);
     });
+    if (hits.length) addLog(`变量已替换: ${[...new Set(hits)].join(', ')}`, 'info');
+    return result;
   }
 
   async function resolveMacros(text) {
-    const value = String(text ?? '');
+    const value = resolveBareVariables(String(text ?? ''));
     const ctx = getContext();
-    const extended = ctx?.substituteParamsExtended || window.SillyTavern?.substituteParamsExtended;
-    const basic = ctx?.substituteParams || window.SillyTavern?.substituteParams;
-    const macro = window.TavernHelper?.substitudeMacros;
+    const extended = ctx?.substituteParamsExtended || hostWindow.SillyTavern?.substituteParamsExtended;
+    const basic = ctx?.substituteParams || hostWindow.SillyTavern?.substituteParams;
+    const macro = hostWindow.TavernHelper?.substitudeMacros;
     for (const fn of [extended, basic, macro]) {
       if (typeof fn !== 'function') continue;
       try {
