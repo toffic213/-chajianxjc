@@ -2943,15 +2943,21 @@ window.addEventListener('message', function(e){
       fire();
     });
     on(types.MESSAGE_RECEIVED, async (messageId, type) => {
-      const allowed = ['normal', 'regenerate', 'swipe', 'first_message'];
+      // Automatic generation follows AI replies only. The first (index 0) message
+      // is intentionally excluded; it can still be generated manually.
+      const allowed = ['normal', 'regenerate', 'swipe'];
       if (!allowed.includes(type)) {
+        return;
+      }
+      const numericMessageId = Number(messageId);
+      if (!Number.isInteger(numericMessageId) || numericMessageId <= 0 || !isAssistantMessage(getMessage(numericMessageId))) {
         return;
       }
       const autoEnabled = getChatAutoEnabled();
       if (!autoEnabled) {
         return;
       }
-      await generateForMessage(Number(messageId));
+      await generateForMessage(numericMessageId);
     });
     on(types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
       renderMessageTheater(Number(messageId));
